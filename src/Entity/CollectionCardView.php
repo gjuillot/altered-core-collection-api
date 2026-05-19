@@ -34,6 +34,7 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Get(
             uriTemplate: '/collection/{id}',
+            requirements: ['id' => '\d+'],
             provider: CollectionProvider::class,
             normalizationContext: ['groups' => ['collection:read']],
         ),
@@ -45,6 +46,7 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Patch(
             uriTemplate: '/collection/{id}',
+            requirements: ['id' => '\d+'],
             provider: CollectionProvider::class,
             processor: CollectionProcessor::class,
             denormalizationContext: ['groups' => ['collection:patch']],
@@ -52,6 +54,7 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Delete(
             uriTemplate: '/collection/{id}',
+            requirements: ['id' => '\d+'],
             provider: CollectionProvider::class,
             processor: CollectionProcessor::class,
         ),
