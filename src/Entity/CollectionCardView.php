@@ -258,30 +258,27 @@ class CollectionCardView
     /** Populate all card metadata fields from an altered-core API card response. */
     public function fillFromApiData(array $cardData, string $locale = 'fr'): void
     {
-        $cg = $cardData['cardGroup'] ?? [];
-
         $this->cardSet  = $cardData['set']['reference'] ?? '';
-        $this->faction  = $cg['faction']['code'] ?? '';
-        $this->rarity   = $cg['rarity']['reference'] ?? '';
+        $this->faction  = $cardData['faction']['code'] ?? '';
+        $this->rarity   = $cardData['rarity']['reference'] ?? '';
 
-        $nameRaw        = $cg['name'] ?? null;
-        $this->name     = is_array($nameRaw) ? ($nameRaw[$locale] ?? $nameRaw['fr'] ?? null) : $nameRaw;
+        $this->name     = $cardData['name'] ?? null;
 
-        $imageRaw       = $cardData['imagePath'] ?? null;
+        $imageRaw        = $cardData['imagePath'] ?? null;
         $this->imagePath = is_array($imageRaw) ? ($imageRaw[$locale] ?? $imageRaw['fr'] ?? null) : $imageRaw;
 
-        $this->mainCost   = isset($cg['mainCost'])   ? (int) $cg['mainCost']   : null;
-        $this->recallCost = isset($cg['recallCost']) ? (int) $cg['recallCost'] : null;
-        $this->cardType   = $cg['cardType']['reference'] ?? (is_string($cg['cardType'] ?? null) ? $cg['cardType'] : null);
+        $this->mainCost   = isset($cardData['mainCost'])   ? (int) $cardData['mainCost']   : null;
+        $this->recallCost = isset($cardData['recallCost']) ? (int) $cardData['recallCost'] : null;
+        $this->cardType   = $cardData['cardType']['reference'] ?? (is_string($cardData['cardType'] ?? null) ? $cardData['cardType'] : null);
 
-        $this->oceanPower    = isset($cg['oceanPower'])    ? (int) $cg['oceanPower']    : null;
-        $this->mountainPower = isset($cg['mountainPower']) ? (int) $cg['mountainPower'] : null;
-        $this->forestPower   = isset($cg['forestPower'])   ? (int) $cg['forestPower']   : null;
+        $this->oceanPower    = isset($cardData['oceanPower'])    ? (int) $cardData['oceanPower']    : null;
+        $this->mountainPower = isset($cardData['mountainPower']) ? (int) $cardData['mountainPower'] : null;
+        $this->forestPower   = isset($cardData['forestPower'])   ? (int) $cardData['forestPower']   : null;
         $this->variation     = $cardData['variation'] ?? null;
-        $this->isBanned      = (bool) ($cg['isBanned'] ?? false);
-        $this->isSuspended   = (bool) ($cg['isSuspended'] ?? false);
+        $this->isBanned      = (bool) ($cardData['isBanned'] ?? false);
+        $this->isSuspended   = (bool) ($cardData['isSuspended'] ?? false);
 
-        $rawSubTypes = $cg['cardSubTypes'] ?? [];
+        $rawSubTypes = $cardData['cardSubTypes'] ?? [];
         if (is_array($rawSubTypes) && !empty($rawSubTypes)) {
             $this->subTypes = implode(',', array_column($rawSubTypes, 'reference'));
         } else {
