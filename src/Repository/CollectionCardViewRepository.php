@@ -129,6 +129,59 @@ class CollectionCardViewRepository extends ServiceEntityRepository
         ->setParameter('st_end',    '%,' . $st);
     }
 
+    /**
+     * Count the user's distinct owned cardReferences per faction × cardSet, split into
+     * quantity buckets: exactly 1, exactly 2, and 3 or more. Only the given cardSets, rarities
+     * and cardTypes are considered. (One row per (user, cardReference) is guaranteed by the
+     * unique constraint, so counting rows counts distinct references.)
+     *
+     * Restricting to the same rarities and card types as the universe lookup keeps the
+     * bucket-0 math (universe − owned) consistent.
+     *
+     * @param  string[] $sets
+     * @param  string[] $rarities
+     * @param  string[] $cardTypes
+     * @return array<string, array{1:int, 2:int, '3+':int}>  keyed by "FACTION|CARDSET"
+     */
+    public function countOwnedBucketsByFactionAndSet(User $user, array $sets, array $rarities, array $cardTypes): array
+    {
+        if (empty($sets) || empty($rarities) || empty($cardTypes)) {
+            return [];
+        }
+
+        $rows = $this->createQueryBuilder('v')
+            ->select(
+                'v.faction AS faction',
+                'v.cardSet AS cardSet',
+                'SUM(CASE WHEN v.quantity = 1 THEN 1 ELSE 0 END) AS b1',
+                'SUM(CASE WHEN v.quantity = 2 THEN 1 ELSE 0 END) AS b2',
+                'SUM(CASE WHEN v.quantity >= 3 THEN 1 ELSE 0 END) AS b3plus',
+            )
+            ->where('v.user = :user')
+            ->andWhere('v.cardSet IN (:sets)')
+            ->andWhere('v.rarity IN (:rarities)')
+            ->andWhere('v.cardType IN (:cardTypes)')
+            ->setParameter('user', $user)
+            ->setParameter('sets', $sets)
+            ->setParameter('rarities', $rarities)
+            ->setParameter('cardTypes', $cardTypes)
+            ->groupBy('v.faction')
+            ->addGroupBy('v.cardSet')
+            ->getQuery()
+            ->getArrayResult();
+
+        $result = [];
+        foreach ($rows as $row) {
+            $result[$row['faction'] . '|' . $row['cardSet']] = [
+                '1'  => (int) $row['b1'],
+                '2'  => (int) $row['b2'],
+                '3+' => (int) $row['b3plus'],
+            ];
+        }
+
+        return $result;
+    }
+
     /** @return CollectionCardView[] */
     public function findByIdsAndUser(array $ids, User $user): array
     {
