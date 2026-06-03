@@ -7,7 +7,6 @@ use App\Service\CollectionPlaysetService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
 
 class CollectionPlaysetController extends AbstractController
@@ -21,19 +20,17 @@ class CollectionPlaysetController extends AbstractController
      * GET /api/collection/playset
      *
      * For the connected user, returns the number of unique cardReferences in each
-     * faction × cardSet × quantity-bucket (0, 1, 2, 3+) across the supported sets.
+     * faction × cardSet × quantity-bucket (0, 1, 2, 3+) across the supported sets,
+     * plus per-faction and per-set aggregations. Counts only; no localized data.
      *
-     * Query: ?locale=fr (optional)
-     *
-     * Example: [{"faction":"AX","cardSet":"ALIZE","quantities":{"0":23,"1":4,"2":57,"3+":57}}, ...]
+     * Example: {"byFactionAndSet":[{"faction":"AX","cardSet":"ALIZE","quantities":{"0":23,"1":4,"2":57,"3+":57}}, ...], "byFaction":[...], "bySet":[...]}
      */
     #[Route('/api/collection/playset', name: 'collection_playset', methods: ['GET'])]
-    public function __invoke(Request $request): JsonResponse
+    public function __invoke(): JsonResponse
     {
         /** @var User $user */
-        $user   = $this->security->getUser();
-        $locale = $request->query->get('locale', 'fr');
+        $user = $this->security->getUser();
 
-        return new JsonResponse($this->playsetService->computePlayset($user, $locale));
+        return new JsonResponse($this->playsetService->computePlayset($user));
     }
 }

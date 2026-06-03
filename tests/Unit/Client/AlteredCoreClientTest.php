@@ -148,7 +148,7 @@ class AlteredCoreClientTest extends TestCase
                         && $rarity === ['COMMON', 'EXALTED', 'RARE']
                         && $cardType === ['CHARACTER', 'SPELL']
                         && $q['itemsPerPage'] === 1
-                        && $q['locale'] === 'fr';
+                        && !array_key_exists('locale', $q); // counts are language-independent
                 }),
             )
             ->willReturn($response);

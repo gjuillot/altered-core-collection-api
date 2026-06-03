@@ -88,18 +88,18 @@ class AlteredCoreClient
      * We only need the total, not the cards themselves, so we request `itemsPerPage=1` and read
      * the collection-wide `totalItems` (authoritative across all pages). The endpoint requires
      * the rarity filter to be supplied. Falls back to counting distinct references in the member
-     * list if no total field is present.
+     * list if no total field is present. No locale is sent: the count is language-independent.
      *
      * @param string[] $rarities
      * @param string[] $cardTypes
      */
-    public function countCardsBySetAndFaction(string $set, string $faction, array $rarities, array $cardTypes, string $locale = 'fr'): int
+    public function countCardsBySetAndFaction(string $set, string $faction, array $rarities, array $cardTypes): int
     {
         sort($rarities);  // stable cache key regardless of argument order
         sort($cardTypes);
-        $cacheKey = 'card_count_' . md5($set . '_' . $faction . '_' . implode(',', $rarities) . '_' . implode(',', $cardTypes) . '_' . $locale);
+        $cacheKey = 'card_count_' . md5($set . '_' . $faction . '_' . implode(',', $rarities) . '_' . implode(',', $cardTypes));
 
-        return $this->cache->get($cacheKey, function (ItemInterface $item) use ($set, $faction, $rarities, $cardTypes, $locale): int {
+        return $this->cache->get($cacheKey, function (ItemInterface $item) use ($set, $faction, $rarities, $cardTypes): int {
             $item->expiresAfter(3600);
 
             $response = $this->httpClient->request('GET', $this->alteredCoreUrl . '/api/cards', [
@@ -109,7 +109,6 @@ class AlteredCoreClient
                     'rarity'        => $rarities,
                     'cardType'      => $cardTypes,
                     'itemsPerPage'  => 1,
-                    'locale'        => $locale,
                 ],
             ]);
 

@@ -7,7 +7,6 @@ use App\Entity\User;
 use App\Service\CollectionPlaysetService;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bundle\SecurityBundle\Security;
-use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class CollectionPlaysetControllerTest extends TestCase
@@ -44,10 +43,10 @@ class CollectionPlaysetControllerTest extends TestCase
 
         $this->playsetService->expects($this->once())
             ->method('computePlayset')
-            ->with($this->user, 'fr')
+            ->with($this->user)
             ->willReturn($playset);
 
-        $response = $this->controller->__invoke(new Request());
+        $response = $this->controller->__invoke();
 
         $this->assertSame(Response::HTTP_OK, $response->getStatusCode());
 
@@ -58,29 +57,5 @@ class CollectionPlaysetControllerTest extends TestCase
         $this->assertSame('AX', $data['byFaction'][0]['faction']);
         $this->assertSame('ALIZE', $data['bySet'][0]['cardSet']);
         $this->assertSame(57, $data['bySet'][0]['quantities']['3+']);
-    }
-
-    public function testPassesLocaleQueryParamToService(): void
-    {
-        $this->playsetService->expects($this->once())
-            ->method('computePlayset')
-            ->with($this->user, 'en')
-            ->willReturn([]);
-
-        $response = $this->controller->__invoke(new Request(['locale' => 'en']));
-
-        $this->assertSame(Response::HTTP_OK, $response->getStatusCode());
-    }
-
-    public function testDefaultsLocaleToFrenchWhenNotProvided(): void
-    {
-        $this->playsetService->expects($this->once())
-            ->method('computePlayset')
-            ->with($this->user, 'fr')
-            ->willReturn([]);
-
-        $response = $this->controller->__invoke(new Request());
-
-        $this->assertSame(Response::HTTP_OK, $response->getStatusCode());
     }
 }

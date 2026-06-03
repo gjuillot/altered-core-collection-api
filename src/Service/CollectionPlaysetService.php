@@ -56,7 +56,7 @@ class CollectionPlaysetService
      *     bySet: list<array{cardSet:string, quantities:array{0:int, 1:int, 2:int, '3+':int}}>
      * }
      */
-    public function computePlayset(User $user, string $locale = 'fr'): array
+    public function computePlayset(User $user): array
     {
         $owned = $this->viewRepository->countOwnedBucketsByFactionAndSet($user, self::SETS, self::RARITIES, self::CARD_TYPES);
 
@@ -69,7 +69,7 @@ class CollectionPlaysetService
                 $buckets = $owned[$faction . '|' . $set] ?? ['1' => 0, '2' => 0, '3+' => 0];
 
                 $ownedNonZero = $buckets['1'] + $buckets['2'] + $buckets['3+'];
-                $universe     = $this->alteredCoreClient->countCardsBySetAndFaction($set, $faction, self::RARITIES, self::CARD_TYPES, $locale);
+                $universe     = $this->alteredCoreClient->countCardsBySetAndFaction($set, $faction, self::RARITIES, self::CARD_TYPES);
 
                 $quantities = [
                     '0'  => max(0, $universe - $ownedNonZero),

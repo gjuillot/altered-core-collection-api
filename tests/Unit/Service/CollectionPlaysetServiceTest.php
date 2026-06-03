@@ -87,7 +87,7 @@ class CollectionPlaysetServiceTest extends TestCase
         // universe = 23 (not owned) + 118 (owned non-zero) = 141 for AX/ALIZE; 0 elsewhere
         $this->client->method('countCardsBySetAndFaction')
             ->willReturnCallback(
-                static fn (string $set, string $faction, array $rarities, array $cardTypes, string $locale = 'fr'): int =>
+                static fn (string $set, string $faction): int =>
                     ($set === 'ALIZE' && $faction === 'AX') ? 141 : 0,
             );
 
@@ -107,7 +107,7 @@ class CollectionPlaysetServiceTest extends TestCase
         ]);
         $this->client->method('countCardsBySetAndFaction')
             ->willReturnCallback(
-                static fn (string $set, string $faction, array $rarities, array $cardTypes, string $locale = 'fr'): int =>
+                static fn (string $set, string $faction): int =>
                     ($set === 'CORE' && $faction === 'BR') ? 10 : 0,
             );
 
@@ -140,7 +140,7 @@ class CollectionPlaysetServiceTest extends TestCase
         ]);
         $this->client->method('countCardsBySetAndFaction')
             ->willReturnCallback(
-                static function (string $set, string $faction, array $rarities, array $cardTypes, string $locale = 'fr'): int {
+                static function (string $set, string $faction): int {
                     if ($faction !== 'AX') {
                         return 0;
                     }
@@ -171,7 +171,7 @@ class CollectionPlaysetServiceTest extends TestCase
         ]);
         $this->client->method('countCardsBySetAndFaction')
             ->willReturnCallback(
-                static function (string $set, string $faction, array $rarities, array $cardTypes, string $locale = 'fr'): int {
+                static function (string $set, string $faction): int {
                     if ($set !== 'CORE') {
                         return 0;
                     }
@@ -192,7 +192,7 @@ class CollectionPlaysetServiceTest extends TestCase
         $this->assertSame(3,  $core['3+']); // 0 + 3
     }
 
-    public function testComputePlaysetForwardsUserSetsRaritiesCardTypesAndLocaleToCollaborators(): void
+    public function testComputePlaysetForwardsUserSetsRaritiesAndCardTypesToCollaborators(): void
     {
         $this->viewRepository->expects($this->once())
             ->method('countOwnedBucketsByFactionAndSet')
@@ -211,10 +211,9 @@ class CollectionPlaysetServiceTest extends TestCase
                 $this->anything(),
                 CollectionPlaysetService::RARITIES,
                 CollectionPlaysetService::CARD_TYPES,
-                'en',
             )
             ->willReturn(0);
 
-        $this->service->computePlayset($this->user, 'en');
+        $this->service->computePlayset($this->user);
     }
 }
