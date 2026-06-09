@@ -22,6 +22,7 @@ homepage:
   endpoint_collection_patch_desc: "Modifie la quantité et/ou le statut foil d'une carte."
   endpoint_collection_delete_desc: "Supprime une carte de la collection."
   endpoint_dev_auth_desc: "Génère un JWT de développement (dev uniquement, désactivé en production)."
+  endpoint_collection_playset_desc: "Retourne la complétion du playset par faction × extension : nombre de références dans chaque bucket de quantité (0, 1, 2, 3+)."
 
   filter_examples: Exemples de filtres
   badge_auth: Authentifié
@@ -61,6 +62,18 @@ homepage:
   batch_label_response: "réponse"
   batch_note_skip: "Ignoré si déjà en collection"
   batch_note_unknown: "Ignoré si ID inconnu ou appartient à un autre utilisateur"
+
+  section_playset: "Playset"
+  playset_desc: "Statistiques de complétion par faction × extension. Les éditions CORE et COREKS contiennent les mêmes cartes : elles sont fusionnées sous un seul set « CORE », une carte possédée dans les deux éditions étant comptée une seule fois avec la somme des quantités (ex. 1×COREKS + 2×CORE = une carte ×3). Seules les raretés COMMON / RARE / EXALTED et les types CHARACTER / SPELL / PERMANENT sont comptabilisés — héros et raretés UNIQUE exclus."
+  playset_bucket_title: "Buckets de quantité"
+  playset_bucket_0: "Non possédé (univers moins les exemplaires possédés)"
+  playset_bucket_1: "Possédé en exactement 1 exemplaire"
+  playset_bucket_2: "Possédé en exactement 2 exemplaires"
+  playset_bucket_3p: "Possédé en 3 exemplaires ou plus"
+  playset_views_title: "Vues retournées"
+  playset_view_byFactionAndSet: "Grille complète faction × set"
+  playset_view_byFaction: "Totaux par faction (somme de tous les sets)"
+  playset_view_bySet: "Totaux par set (somme de toutes les factions)"
 
   footer_text: "Altered Collection API — Projet personnel. Non affilié à Equinox."
   footer_link: "Documentation API →"

@@ -19,6 +19,14 @@ use App\Repository\CollectionCardViewRepository;
  * all of its counts are zero. The "universe" (total existing references) is fetched from
  * altered-core, one (set, faction) couple at a time, and cached there for 1 hour.
  *
+ * Some editions share the same cards and are merged into a single output set (see
+ * {@see self::SET_ALIASES}): CORE and COREKS hold identical cards, so a card owned across both
+ * is collapsed to one card whose quantity is the sum across editions (1×COREKS + 2×CORE counts
+ * as a single card ×3, bucket "3+"). This merge happens at the card level — hence the service
+ * works from raw per-card quantities and buckets them itself, rather than summing SQL buckets
+ * which would double-count the same card. The merged set's universe is the canonical edition's
+ * (CORE), since COREKS adds no new references.
+ *
  * Both the universe lookup and the owned counts are restricted to {@see self::RARITIES} and
  * {@see self::CARD_TYPES} (UNIQUE rarities, tokens and other card types are excluded), so that
  * the "0" bucket — universe minus owned — stays internally consistent.
@@ -33,7 +41,14 @@ use App\Repository\CollectionCardViewRepository;
 class CollectionPlaysetService
 {
     /** Card sets included in the playset breakdown, in output order. */
-    public const SETS = ['CORE', 'COREKS', 'ALIZE', 'BISE', 'CYCLONE', 'DUSTER', 'EOLE'];
+    public const SETS = ['CORE', 'ALIZE', 'BISE', 'CYCLONE', 'DUSTER', 'EOLE'];
+
+    /**
+     * Editions that hold the same cards as another set and are merged into it: source set code
+     * (as stored on the cards) → output set code (must be one of {@see self::SETS}). Cards in a
+     * source edition are folded onto their canonical edition before bucketing.
+     */
+    public const SET_ALIASES = ['COREKS' => 'CORE'];
 
     /** Altered factions, in output order. */
     public const FACTIONS = ['AX', 'BR', 'LY', 'MU', 'OR', 'YZ'];
@@ -58,7 +73,11 @@ class CollectionPlaysetService
      */
     public function computePlayset(User $user): array
     {
-        $owned = $this->viewRepository->countOwnedBucketsByFactionAndSet($user, self::SETS, self::RARITIES, self::CARD_TYPES);
+        // Query every underlying edition (the output sets plus their merged sources), then fold
+        // each card onto its canonical edition and bucket the merged per-card quantities.
+        $sourceSets = array_values(array_unique(array_merge(self::SETS, array_keys(self::SET_ALIASES))));
+        $rows       = $this->viewRepository->findOwnedCardQuantities($user, $sourceSets, self::RARITIES, self::CARD_TYPES);
+        $owned      = $this->mergeAndBucket($rows);
 
         $byFactionAndSet = [];
         $factionTotals   = array_fill_keys(self::FACTIONS, ['0' => 0, '1' => 0, '2' => 0, '3+' => 0]);
@@ -105,5 +124,63 @@ class CollectionPlaysetService
             'byFaction'       => $byFaction,
             'bySet'           => $bySet,
         ];
+    }
+
+    /**
+     * Fold owned cards onto their canonical edition, sum the quantity of each card across the
+     * merged editions, then bucket the merged quantities per faction × (canonical) set.
+     *
+     * @param  list<array{faction:string, cardSet:string, cardReference:string, quantity:int}> $rows
+     * @return array<string, array{1:int, 2:int, '3+':int}>  keyed by "FACTION|CARDSET"
+     */
+    private function mergeAndBucket(array $rows): array
+    {
+        // Sum each card's quantity across editions, keyed by its canonical (de-aliased) reference.
+        $merged = [];
+        foreach ($rows as $row) {
+            $key = $this->canonicalReference($row['cardReference']);
+            if (!isset($merged[$key])) {
+                $merged[$key] = [
+                    'faction'  => $row['faction'],
+                    'cardSet'  => self::SET_ALIASES[$row['cardSet']] ?? $row['cardSet'],
+                    'quantity' => 0,
+                ];
+            }
+            $merged[$key]['quantity'] += $row['quantity'];
+        }
+
+        $owned = [];
+        foreach ($merged as $card) {
+            if ($card['quantity'] <= 0) {
+                continue;
+            }
+            $gridKey = $card['faction'] . '|' . $card['cardSet'];
+            $owned[$gridKey] ??= ['1' => 0, '2' => 0, '3+' => 0];
+
+            $bucket = match (true) {
+                $card['quantity'] === 1 => '1',
+                $card['quantity'] === 2 => '2',
+                default                 => '3+',
+            };
+            $owned[$gridKey][$bucket]++;
+        }
+
+        return $owned;
+    }
+
+    /**
+     * Rewrite a reference's set token onto its canonical edition so the same card across merged
+     * editions collapses to one key, e.g. ALT_COREKS_B_AX_01_C → ALT_CORE_B_AX_01_C.
+     */
+    private function canonicalReference(string $reference): string
+    {
+        foreach (self::SET_ALIASES as $source => $target) {
+            $prefix = 'ALT_' . $source . '_';
+            if (str_starts_with($reference, $prefix)) {
+                return 'ALT_' . $target . '_' . substr($reference, strlen($prefix));
+            }
+        }
+
+        return $reference;
     }
 }

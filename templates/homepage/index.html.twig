@@ -152,6 +152,15 @@
                     params: [],
                 },
                 {
+                    method: 'GET',
+                    color: 'emerald',
+                    path: '/api/collection/playset',
+                    desc: 'homepage.endpoint_collection_playset_desc',
+                    badge: 'homepage.badge_auth',
+                    badge_color: 'amber',
+                    params: [],
+                },
+                {
                     method: 'POST',
                     color: 'blue',
                     path: '/api/dev/auth',
@@ -476,6 +485,93 @@
                 </div>
             </div>
             {% endfor %}
+            </div>
+        </section>
+
+        <!-- Playset -->
+        <section>
+            <h2 class="text-2xl font-bold text-white mb-2">{{ 'homepage.section_playset'|trans }}</h2>
+            <p class="text-gray-400 mb-8 text-sm leading-relaxed">{{ 'homepage.playset_desc'|trans }}</p>
+
+            <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+
+                {# Header #}
+                <div class="flex items-start gap-4 p-5 border-b border-gray-800">
+                    <span class="shrink-0 bg-emerald-500/15 text-emerald-400 text-xs font-bold px-2.5 py-1 rounded font-mono mt-0.5 min-w-[60px] text-center">GET</span>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-1">
+                            <code class="text-white font-mono text-sm">/api/collection/playset</code>
+                            <span class="text-xs bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full">{{ 'homepage.badge_auth'|trans }}</span>
+                        </div>
+                        <p class="text-gray-400 text-sm">{{ 'homepage.endpoint_collection_playset_desc'|trans }}</p>
+                    </div>
+                </div>
+
+                {# Buckets + views description on the left, response example on the right #}
+                <div class="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-800">
+
+                    <div class="p-5 space-y-6">
+                        <div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-3">{{ 'homepage.playset_bucket_title'|trans }}</div>
+                            <table class="w-full text-xs">
+                                <tbody class="divide-y divide-gray-800">
+                                    {% for bucket in [
+                                        { key: '"0"',  desc: 'homepage.playset_bucket_0'  },
+                                        { key: '"1"',  desc: 'homepage.playset_bucket_1'  },
+                                        { key: '"2"',  desc: 'homepage.playset_bucket_2'  },
+                                        { key: '"3+"', desc: 'homepage.playset_bucket_3p' },
+                                    ] %}
+                                    <tr>
+                                        <td class="py-2 pr-3"><code class="text-indigo-300 font-mono">{{ bucket.key }}</code></td>
+                                        <td class="py-2 text-gray-400">{{ bucket.desc|trans }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-3">{{ 'homepage.playset_views_title'|trans }}</div>
+                            <table class="w-full text-xs">
+                                <tbody class="divide-y divide-gray-800">
+                                    {% for view in [
+                                        { key: 'byFactionAndSet', desc: 'homepage.playset_view_byFactionAndSet' },
+                                        { key: 'byFaction',       desc: 'homepage.playset_view_byFaction'       },
+                                        { key: 'bySet',           desc: 'homepage.playset_view_bySet'           },
+                                    ] %}
+                                    <tr>
+                                        <td class="py-2 pr-3"><code class="text-emerald-400 font-mono">{{ view.key }}</code></td>
+                                        <td class="py-2 text-gray-400">{{ view.desc|trans }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="p-5">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-2">{{ 'homepage.batch_label_response'|trans }}</div>
+                        <pre class="bg-gray-950 rounded-lg p-4 text-xs text-gray-300 font-mono overflow-x-auto leading-relaxed">{
+  "byFactionAndSet": [
+    { "faction": "AX", "cardSet": "CORE",
+      "quantities": { "0": 80, "1": 2, "2": 1, "3+": 1 } },
+    { "faction": "BR", "cardSet": "CORE",
+      "quantities": { "0": 83, "1": 0, "2": 0, "3+": 0 } },
+    ...
+  ],
+  "byFaction": [
+    { "faction": "AX",
+      "quantities": { "0": 417, "1": 2, "2": 1, "3+": 1 } },
+    ...
+  ],
+  "bySet": [
+    { "cardSet": "CORE",
+      "quantities": { "0": 500, "1": 2, "2": 1, "3+": 1 } },
+    ...
+  ]
+}</pre>
+                    </div>
+
+                </div>
             </div>
         </section>
 

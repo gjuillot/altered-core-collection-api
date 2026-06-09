@@ -22,6 +22,7 @@ homepage:
   endpoint_collection_patch_desc: "Update the quantity and/or foil status of a card."
   endpoint_collection_delete_desc: "Remove a card from the collection."
   endpoint_dev_auth_desc: "Generate a development JWT (dev only, disabled in production)."
+  endpoint_collection_playset_desc: "Returns playset completion by faction × set: number of owned references in each quantity bucket (0, 1, 2, 3+)."
 
   filter_examples: Filter examples
   badge_auth: Authenticated
@@ -61,6 +62,18 @@ homepage:
   batch_label_response: "response"
   batch_note_skip: "Skipped if already in collection"
   batch_note_unknown: "Ignored if ID unknown or belongs to another user"
+
+  section_playset: "Playset"
+  playset_desc: "Completion statistics per faction × set. The CORE and COREKS editions share the same cards: they are merged into a single \"CORE\" set, a card owned in both editions being counted once with the summed quantities (e.g. 1×COREKS + 2×CORE = one card ×3). Only COMMON / RARE / EXALTED rarities and CHARACTER / SPELL / PERMANENT types are counted — heroes and UNIQUE rarities excluded."
+  playset_bucket_title: "Quantity buckets"
+  playset_bucket_0: "Not owned (universe size minus owned copies)"
+  playset_bucket_1: "Owned in exactly 1 copy"
+  playset_bucket_2: "Owned in exactly 2 copies"
+  playset_bucket_3p: "Owned in 3 or more copies"
+  playset_views_title: "Returned views"
+  playset_view_byFactionAndSet: "Full faction × set grid"
+  playset_view_byFaction: "Totals per faction (sum across all sets)"
+  playset_view_bySet: "Totals per set (sum across all factions)"
 
   footer_text: "Altered Collection API — Personal project. Not affiliated with Equinox."
   footer_link: "API Documentation →"
