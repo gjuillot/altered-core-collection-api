@@ -113,4 +113,90 @@ class AlteredCoreClientTest extends TestCase
     {
         $this->assertSame('https://altered.example.com', $this->client->getBaseUrl());
     }
+
+    // ── countCardsBySetAndFaction ───────────────────────────────────────────────
+
+    private function mockCacheMiss(): void
+    {
+        $this->cache->method('get')
+            ->willReturnCallback(function (string $key, callable $callback): mixed {
+                $item = $this->createMock(ItemInterface::class);
+                $item->method('expiresAfter')->willReturnSelf();
+                return $callback($item);
+            });
+    }
+
+    public function testCountCardsBySetAndFactionSendsArrayFiltersRaritiesAndCardTypes(): void
+    {
+        $this->mockCacheMiss();
+
+        $response = $this->createMock(ResponseInterface::class);
+        $response->method('toArray')->willReturn(['totalItems' => 92, 'member' => []]);
+
+        $this->httpClient->expects($this->once())
+            ->method('request')
+            ->with(
+                'GET',
+                'https://altered.example.com/api/cards',
+                $this->callback(function (array $options): bool {
+                    $q = $options['query'];
+                    // The client sorts rarities/cardTypes for a stable cache key, so compare unordered.
+                    $rarity   = $q['rarity'];   sort($rarity);
+                    $cardType = $q['cardType']; sort($cardType);
+                    return $q['set.reference'] === ['ALIZE']
+                        && $q['faction.code'] === ['AX']
+                        && $rarity === ['COMMON', 'EXALTED', 'RARE']
+                        && $cardType === ['CHARACTER', 'SPELL']
+                        && $q['itemsPerPage'] === 1
+                        && !array_key_exists('locale', $q); // counts are language-independent
+                }),
+            )
+            ->willReturn($response);
+
+        $this->assertSame(92, $this->client->countCardsBySetAndFaction(
+            'ALIZE', 'AX', ['COMMON', 'RARE', 'EXALTED'], ['CHARACTER', 'SPELL'],
+        ));
+    }
+
+    public function testCountCardsBySetAndFactionUsesTotalItemsOverMemberCount(): void
+    {
+        $this->mockCacheMiss();
+
+        $response = $this->createMock(ResponseInterface::class);
+        // member list is paginated/truncated, but totalItems is authoritative across pages
+        $response->method('toArray')->willReturn([
+            'totalItems'   => 130,
+            'member'       => [['reference' => 'ALT_CORE_B_AX_01_C']],
+            'itemsPerPage' => 1,
+            'lastPage'     => 130,
+        ]);
+        $this->httpClient->method('request')->willReturn($response);
+
+        $this->assertSame(130, $this->client->countCardsBySetAndFaction('CORE', 'AX', ['COMMON'], ['CHARACTER']));
+    }
+
+    public function testCountCardsBySetAndFactionCountsDistinctReferencesWhenNoTotalField(): void
+    {
+        $this->mockCacheMiss();
+
+        $response = $this->createMock(ResponseInterface::class);
+        $response->method('toArray')->willReturn([
+            'member' => [
+                ['reference' => 'ALT_CORE_B_AX_01_C'],
+                ['reference' => 'ALT_CORE_B_AX_02_R'],
+                ['reference' => 'ALT_CORE_B_AX_01_C'], // duplicate must not be double-counted
+            ],
+        ]);
+        $this->httpClient->method('request')->willReturn($response);
+
+        $this->assertSame(2, $this->client->countCardsBySetAndFaction('CORE', 'AX', ['COMMON', 'RARE'], ['CHARACTER']));
+    }
+
+    public function testCountCardsBySetAndFactionReturnsCachedValueWithoutHttpCall(): void
+    {
+        $this->cache->method('get')->willReturn(7);
+        $this->httpClient->expects($this->never())->method('request');
+
+        $this->assertSame(7, $this->client->countCardsBySetAndFaction('CORE', 'AX', ['COMMON'], ['CHARACTER']));
+    }
 }
