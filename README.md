@@ -1,3 +1,282 @@
+# Altered Collection — Community API
+
+> [Version française ci-dessous](#altered-collection--api-communautaire)
+
+Open-source REST API for managing the **personal card collection** of [Altered](https://altered.gg) players, built with Symfony 8, API Platform and PostgreSQL.
+Each authenticated user (via Keycloak) can add, update, and delete cards from their collection, with quantities and foil variants.
+
+Card metadata (name, faction, rarity, costs, image, etc.) is **not** stored locally: it is fetched on the fly from the [altered-core-cards-api](https://github.com/Altered-Community/altered-core-cards-api) and cached in a read view.
+
+---
+
+## Tech stack
+
+- **PHP 8.4** + **Symfony 8**
+- **API Platform 4**
+- **PostgreSQL 16**
+- **Doctrine ORM 3** + migrations
+- **Keycloak** (JWT authentication, validated via JWKS — `firebase/php-jwt`)
+- **nelmio/cors-bundle** (CORS)
+- **Twig** (home page)
+- **Docker** (PostgreSQL via Symfony CLI)
+
+---
+
+## Architecture
+
+The API uses a light read/write separation (lightweight CQRS):
+
+- **`CollectionCard`** — write model. Source of truth: `cardReference`, `quantity`, `isFoil`, linked to a `User`.
+- **`CollectionCardView`** — read model exposed by the API. Combines write fields **and** card metadata (faction, rarity, costs, image, sub-types…) fetched from altered-core at write time. Filters operate on this view.
+
+On each creation, metadata is fetched via `AlteredCoreClient` (1h cache per reference) and frozen in the view. The `collection:rebuild-views` command allows rebuilding / refreshing all views.
+
+---
+
+## Installation
+
+### Requirements
+
+- PHP 8.4
+- Composer
+- Symfony CLI
+- Docker (for PostgreSQL)
+- A running **altered-core-cards-api** instance (card catalogue)
+- A **Keycloak** instance (unless using dev auth mode, see below)
+
+### 1. Clone the project
+
+```bash
+git clone <repo-url>
+cd altered-core-collection-api
+```
+
+### 2. Install dependencies
+
+```bash
+composer install
+```
+
+### 3. Configure the environment
+
+```bash
+cp .env .env.local
+```
+
+Edit `.env.local` with your configuration:
+
+```env
+# Database
+DATABASE_URL="postgresql://app:!ChangeMe!@127.0.0.1:5432/altered_collection?serverVersion=16&charset=utf8"
+
+# Keycloak
+KEYCLOAK_BASE_URL=http://localhost:8080
+KEYCLOAK_REALM=altered
+KEYCLOAK_CLIENT_ID=altered-collection
+KEYCLOAK_CLIENT_SECRET=
+
+# Dev authentication (mint local tokens without Keycloak)
+DEV_AUTH_ENABLED=false
+
+# altered-core API (card catalogue)
+ALTERED_CORE_URL=http://localhost:41309
+```
+
+### 4. Start the database
+
+```bash
+symfony server:start
+```
+
+Symfony CLI automatically detects `compose.yaml` and starts PostgreSQL via Docker (database `altered_collection`, user `app`).
+
+### 5. Create the database and run migrations
+
+```bash
+symfony console doctrine:database:create
+symfony console doctrine:migrations:migrate
+```
+
+---
+
+## Authentication
+
+The API is **stateless** and protected by JWT token. All routes under `/api` (except `/api/dev/auth` and `/api/docs`) require a header:
+
+```
+Authorization: Bearer <token>
+```
+
+### Keycloak (production)
+
+The token is validated against the Keycloak realm's public keys (JWKS). On the first request, a local `User` is automatically created from the `sub` claim (and `email` / `preferred_username`).
+
+### Dev mode
+
+Setting `DEV_AUTH_ENABLED=true` enables a route to generate a locally signed token (HS256 via `APP_SECRET`), without Keycloak:
+
+```bash
+POST /api/dev/auth
+Content-Type: application/json
+
+{ "sub": "dev-user-1", "email": "dev@example.com", "username": "dev-user" }
+```
+
+Response: `{ "token": "...", "expires_in": 3600, "payload": { ... } }`
+
+---
+
+## API
+
+Interactive documentation (Swagger UI) is available at:
+
+```
+http://localhost/api/docs
+```
+
+### Collection endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/collection` | Current user's collection (filterable) |
+| GET | `/api/collection/{id}` | A single collection entry by ID |
+| POST | `/api/collection` | Add a card to the collection |
+| PATCH | `/api/collection/{id}` | Update an entry (`quantity`, `isFoil`) |
+| DELETE | `/api/collection/{id}` | Delete an entry |
+
+> PATCH uses content-type `application/merge-patch+json`.
+> Each user can only see and modify **their own** collection.
+
+### Batch endpoints
+
+For bulk operations (max **100** items per request):
+
+| Method | Endpoint | Body | Response |
+|---|---|---|---|
+| POST | `/api/collection/batch` | `{"cards": [{"cardReference","quantity","isFoil"}, ...]}` | `{"created": [...], "skipped": [...]}` |
+| PATCH | `/api/collection/batch` | `{"updates": [{"id","quantity","isFoil"}, ...]}` | `{"updated": N}` |
+| DELETE | `/api/collection/batch` | `{"ids": [1, 2, 3]}` | `{"deleted": N}` |
+
+> POST batch silently skips cards already present (`skipped`) and fetches all metadata in a single call to altered-core.
+> PATCH / DELETE batch silently ignore IDs that do not exist or belong to another user.
+
+### Adding a card (example)
+
+```bash
+POST /api/collection
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "cardReference": "ALT_CORE_B_AX_01_C",
+  "quantity": 3,
+  "isFoil": false
+}
+```
+
+Expected reference format: `ALT_CORE_B_AX_01_C` (regex `^ALT_[A-Z0-9]+_[A-Z0-9]+_[A-Z]+_\d+_[A-Z0-9]+(_\d+)?$`).
+`quantity` must be an integer between 0 and 99.
+
+### Available filters on `/api/collection`
+
+```
+# Exact match
+?cardSet=COREKS
+?faction=AX
+?rarity=COMMON
+?cardType=CHARACTER
+?variation=standard
+
+# Partial search
+?cardReference=ALT_CORE
+?name=Sierra
+?subTypes=SOLDIER
+
+# Value ranges (min / max)
+?mainCost[gte]=2&mainCost[lte]=5
+?recallCost[gte]=1
+?oceanPower[gte]=3
+?mountainPower[lte]=4
+?forestPower[gte]=2
+
+# Booleans
+?isFoil=true
+?isBanned=false
+?isSuspended=false
+```
+
+---
+
+## Rebuilding views
+
+The read view (`collection_card_view`) can be rebuilt from the write model and altered-core metadata. Useful after a schema change, a catalogue update, or to repopulate metadata:
+
+```bash
+# Rebuild all views
+symfony console collection:rebuild-views
+
+# Choose the locale for labels / images
+symfony console collection:rebuild-views --locale en
+
+# Dry run without persisting
+symfony console collection:rebuild-views --dry-run
+```
+
+---
+
+## Tests
+
+```bash
+php bin/phpunit
+```
+
+---
+
+## Contributing
+
+The project is open to contributions from the Altered community.
+
+### Before you start
+
+**Join the `#dev` channel on the Altered Discord** and share what you want to work on.
+Coordination is essential to avoid several people working on the same thing in parallel.
+
+### Contribution rules
+
+- All work is done via **Pull Request** — no direct push to `main`
+- One PR = one feature or one fix
+- Discuss the PR on Discord before submitting if the change is significant
+- PRs must pass review from at least one other contributor before being merged
+
+### Workflow
+
+```
+1. Fork / branch from main
+2. Develop your feature
+3. Open a Pull Request with a clear description
+4. Discussion & review
+5. Merge
+```
+
+### Contribution ideas
+
+- New filters or sorts on the collection
+- Statistics endpoints (completion by set/faction, etc.)
+- Deck support
+- Improved batch operations
+- Automated tests
+- Documentation
+
+---
+
+## License
+
+Community project — card data belongs to Equinox.
+
+---
+
+---
+
 # Altered Collection — API communautaire
 
 API REST open source pour gérer la **collection personnelle de cartes** des joueurs du jeu **Altered**, construite avec Symfony 8, API Platform et PostgreSQL.
