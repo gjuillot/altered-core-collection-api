@@ -205,6 +205,56 @@ Expected reference format: `ALT_CORE_B_AX_01_C` (regex `^ALT_[A-Z0-9]+_[A-Z0-9]+
 ?isSuspended=false
 ```
 
+### Playset endpoint
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/collection/playset` | Playset completion stats for the current user |
+
+For the connected user, returns the number of distinct card references in each quantity bucket, broken down by faction × set, plus per-faction and per-set aggregates. Counts only — no card metadata or labels.
+
+**Quantity buckets** (per faction × set):
+
+| Bucket | Meaning |
+|---|---|
+| `0` | Not owned (set/faction universe minus owned references) |
+| `1` | Owned in exactly 1 copy |
+| `2` | Owned in exactly 2 copies |
+| `3+` | Owned in 3 or more copies |
+
+**Scope.** Sets `CORE`, `ALIZE`, `BISE`, `CYCLONE`, `DUSTER`, `EOLE` × factions `AX`, `BR`, `LY`, `MU`, `OR`, `YZ`. The `CORE` and `COREKS` editions share the same cards and are merged into a single `CORE` set — a card owned across both editions is counted once with the summed quantities (e.g. 1×COREKS + 2×CORE = one card ×3, bucket `3+`). Only the `COMMON` / `RARE` / `EXALTED` rarities and the `CHARACTER` / `SPELL` / `PERMANENT` / `LANDMARK_PERMANENT` / `EXPEDITION_PERMANENT` card types are counted; heroes and `UNIQUE` rarities are excluded.
+
+**Rarity filter (optional).** The repeatable `rarity[]` query parameter restricts the whole computation — including the "not owned" universe — to a subset of the supported rarities. When omitted, all three are counted. Unknown values return `422`.
+
+```
+# all rarities (default)
+GET /api/collection/playset
+
+# common cards only
+GET /api/collection/playset?rarity[]=COMMON
+
+# commons + rares
+GET /api/collection/playset?rarity[]=COMMON&rarity[]=RARE
+```
+
+**Response** (`200`):
+
+```json
+{
+  "byFactionAndSet": [
+    { "faction": "AX", "cardSet": "CORE", "quantities": { "0": 80, "1": 2, "2": 1, "3+": 1 } }
+  ],
+  "byFaction": [
+    { "faction": "AX", "quantities": { "0": 417, "1": 2, "2": 1, "3+": 1 } }
+  ],
+  "bySet": [
+    { "cardSet": "CORE", "quantities": { "0": 500, "1": 2, "2": 1, "3+": 1 } }
+  ]
+}
+```
+
+> Errors: `401` if not authenticated, `422` if an unknown rarity is supplied.
+
 ---
 
 ## Rebuilding views
@@ -481,6 +531,56 @@ Format de référence attendu : `ALT_CORE_B_AX_01_C` (regex `^ALT_[A-Z0-9]+_[A-Z
 ?isBanned=false
 ?isSuspended=false
 ```
+
+### Endpoint playset
+
+| Méthode | Endpoint | Description |
+|---|---|---|
+| GET | `/api/collection/playset` | Statistiques de complétion du playset pour l'utilisateur courant |
+
+Pour l'utilisateur connecté, retourne le nombre de références distinctes dans chaque bucket de quantité, ventilé par faction × set, plus des agrégats par faction et par set. Comptages uniquement — aucune métadonnée ni libellé de carte.
+
+**Buckets de quantité** (par faction × set) :
+
+| Bucket | Signification |
+|---|---|
+| `0` | Non possédé (univers du set/faction moins les références possédées) |
+| `1` | Possédé en exactement 1 exemplaire |
+| `2` | Possédé en exactement 2 exemplaires |
+| `3+` | Possédé en 3 exemplaires ou plus |
+
+**Périmètre.** Sets `CORE`, `ALIZE`, `BISE`, `CYCLONE`, `DUSTER`, `EOLE` × factions `AX`, `BR`, `LY`, `MU`, `OR`, `YZ`. Les éditions `CORE` et `COREKS` contiennent les mêmes cartes et sont fusionnées sous un seul set `CORE` — une carte possédée dans les deux éditions est comptée une seule fois avec la somme des quantités (ex. 1×COREKS + 2×CORE = une carte ×3, bucket `3+`). Seules les raretés `COMMON` / `RARE` / `EXALTED` et les types `CHARACTER` / `SPELL` / `PERMANENT` / `LANDMARK_PERMANENT` / `EXPEDITION_PERMANENT` sont comptabilisés ; les héros et les raretés `UNIQUE` sont exclus.
+
+**Filtre de rareté (optionnel).** Le paramètre répétable `rarity[]` restreint l'ensemble du calcul — y compris l'univers « non possédé » — à un sous-ensemble des raretés supportées. S'il est absent, les trois sont comptabilisées. Une valeur inconnue renvoie `422`.
+
+```
+# toutes les raretés (par défaut)
+GET /api/collection/playset
+
+# communes uniquement
+GET /api/collection/playset?rarity[]=COMMON
+
+# communes + rares
+GET /api/collection/playset?rarity[]=COMMON&rarity[]=RARE
+```
+
+**Réponse** (`200`) :
+
+```json
+{
+  "byFactionAndSet": [
+    { "faction": "AX", "cardSet": "CORE", "quantities": { "0": 80, "1": 2, "2": 1, "3+": 1 } }
+  ],
+  "byFaction": [
+    { "faction": "AX", "quantities": { "0": 417, "1": 2, "2": 1, "3+": 1 } }
+  ],
+  "bySet": [
+    { "cardSet": "CORE", "quantities": { "0": 500, "1": 2, "2": 1, "3+": 1 } }
+  ]
+}
+```
+
+> Erreurs : `401` si non authentifié, `422` si une rareté inconnue est fournie.
 
 ---
 
