@@ -130,10 +130,11 @@ class CollectionCardViewRepository extends ServiceEntityRepository
     }
 
     /**
-     * Count the user's distinct owned cardReferences per faction × cardSet, split into
-     * quantity buckets: exactly 1, exactly 2, and 3 or more. Only the given cardSets, rarities
-     * and cardTypes are considered. (One row per (user, cardReference) is guaranteed by the
-     * unique constraint, so counting rows counts distinct references.)
+     * The user's owned cards (one row per owned reference) restricted to the given cardSets,
+     * rarities and cardTypes. Returns the raw per-card quantity rather than pre-bucketed counts,
+     * because the playset breakdown merges cards that exist in several editions (e.g. CORE and
+     * COREKS share the same cards) by summing their quantities *before* bucketing — a step that
+     * is impossible once the buckets are collapsed in SQL.
      *
      * Restricting to the same rarities and card types as the universe lookup keeps the
      * bucket-0 math (universe − owned) consistent.
@@ -141,22 +142,16 @@ class CollectionCardViewRepository extends ServiceEntityRepository
      * @param  string[] $sets
      * @param  string[] $rarities
      * @param  string[] $cardTypes
-     * @return array<string, array{1:int, 2:int, '3+':int}>  keyed by "FACTION|CARDSET"
+     * @return list<array{faction:string, cardSet:string, cardReference:string, quantity:int}>
      */
-    public function countOwnedBucketsByFactionAndSet(User $user, array $sets, array $rarities, array $cardTypes): array
+    public function findOwnedCardQuantities(User $user, array $sets, array $rarities, array $cardTypes): array
     {
         if (empty($sets) || empty($rarities) || empty($cardTypes)) {
             return [];
         }
 
         $rows = $this->createQueryBuilder('v')
-            ->select(
-                'v.faction AS faction',
-                'v.cardSet AS cardSet',
-                'SUM(CASE WHEN v.quantity = 1 THEN 1 ELSE 0 END) AS b1',
-                'SUM(CASE WHEN v.quantity = 2 THEN 1 ELSE 0 END) AS b2',
-                'SUM(CASE WHEN v.quantity >= 3 THEN 1 ELSE 0 END) AS b3plus',
-            )
+            ->select('v.faction AS faction', 'v.cardSet AS cardSet', 'v.cardReference AS cardReference', 'v.quantity AS quantity')
             ->where('v.user = :user')
             ->andWhere('v.cardSet IN (:sets)')
             ->andWhere('v.rarity IN (:rarities)')
@@ -165,21 +160,18 @@ class CollectionCardViewRepository extends ServiceEntityRepository
             ->setParameter('sets', $sets)
             ->setParameter('rarities', $rarities)
             ->setParameter('cardTypes', $cardTypes)
-            ->groupBy('v.faction')
-            ->addGroupBy('v.cardSet')
             ->getQuery()
             ->getArrayResult();
 
-        $result = [];
-        foreach ($rows as $row) {
-            $result[$row['faction'] . '|' . $row['cardSet']] = [
-                '1'  => (int) $row['b1'],
-                '2'  => (int) $row['b2'],
-                '3+' => (int) $row['b3plus'],
-            ];
-        }
-
-        return $result;
+        return array_map(
+            static fn (array $row): array => [
+                'faction'       => $row['faction'],
+                'cardSet'       => $row['cardSet'],
+                'cardReference' => $row['cardReference'],
+                'quantity'      => (int) $row['quantity'],
+            ],
+            $rows,
+        );
     }
 
     /** @return CollectionCardView[] */

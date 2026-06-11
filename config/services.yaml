@@ -31,3 +31,8 @@ services:
     App\Client\AlteredCoreClient:
         arguments:
             $alteredCoreUrl: '%env(ALTERED_CORE_URL)%'
+
+    App\OpenApi\OpenApiDecorator:
+        decorates: 'api_platform.openapi.factory'
+        arguments:
+            $decorated: '@.inner'

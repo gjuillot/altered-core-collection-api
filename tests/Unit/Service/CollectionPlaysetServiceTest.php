@@ -46,9 +46,33 @@ class CollectionPlaysetServiceTest extends TestCase
         $this->fail("Entry {$key}={$value} not found.");
     }
 
+    /**
+     * Build owned-card rows for a faction × set with the requested per-bucket distribution
+     * (b1 cards at qty 1, b2 at qty 2, b3plus at qty 3). References are unique per call.
+     *
+     * @return list<array{faction:string, cardSet:string, cardReference:string, quantity:int}>
+     */
+    private function ownedRows(string $faction, string $set, int $b1, int $b2, int $b3plus): array
+    {
+        $rows = [];
+        $seq  = 0;
+        foreach ([[$b1, 1], [$b2, 2], [$b3plus, 3]] as [$count, $qty]) {
+            for ($i = 0; $i < $count; $i++) {
+                $rows[] = [
+                    'faction'       => $faction,
+                    'cardSet'       => $set,
+                    'cardReference' => sprintf('ALT_%s_B_%s_%03d_C', $set, $faction, ++$seq + ($qty * 1000)),
+                    'quantity'      => $qty,
+                ];
+            }
+        }
+
+        return $rows;
+    }
+
     public function testComputePlaysetReturnsTheThreeViews(): void
     {
-        $this->viewRepository->method('countOwnedBucketsByFactionAndSet')->willReturn([]);
+        $this->viewRepository->method('findOwnedCardQuantities')->willReturn([]);
         $this->client->method('countCardsBySetAndFaction')->willReturn(0);
 
         $result = $this->service->computePlayset($this->user);
@@ -60,7 +84,7 @@ class CollectionPlaysetServiceTest extends TestCase
 
     public function testComputePlaysetEmitsTheFullGrid(): void
     {
-        $this->viewRepository->method('countOwnedBucketsByFactionAndSet')->willReturn([]);
+        $this->viewRepository->method('findOwnedCardQuantities')->willReturn([]);
         $this->client->method('countCardsBySetAndFaction')->willReturn(0);
 
         $grid = $this->service->computePlayset($this->user)['byFactionAndSet'];
@@ -79,11 +103,23 @@ class CollectionPlaysetServiceTest extends TestCase
         }
     }
 
+    public function testCoreksIsNotEmittedAsItsOwnSet(): void
+    {
+        $this->viewRepository->method('findOwnedCardQuantities')->willReturn([]);
+        $this->client->method('countCardsBySetAndFaction')->willReturn(0);
+
+        $result = $this->service->computePlayset($this->user);
+
+        $this->assertNotContains('COREKS', CollectionPlaysetService::SETS);
+        foreach ($result['bySet'] as $entry) {
+            $this->assertNotSame('COREKS', $entry['cardSet']);
+        }
+    }
+
     public function testComputePlaysetBucketsOwnedAndDerivesZeroFromUniverse(): void
     {
-        $this->viewRepository->method('countOwnedBucketsByFactionAndSet')->willReturn([
-            'AX|ALIZE' => ['1' => 4, '2' => 57, '3+' => 57],
-        ]);
+        $this->viewRepository->method('findOwnedCardQuantities')
+            ->willReturn($this->ownedRows('AX', 'ALIZE', 4, 57, 57));
         // universe = 23 (not owned) + 118 (owned non-zero) = 141 for AX/ALIZE; 0 elsewhere
         $this->client->method('countCardsBySetAndFaction')
             ->willReturnCallback(
@@ -102,9 +138,8 @@ class CollectionPlaysetServiceTest extends TestCase
 
     public function testComputePlaysetZeroBucketIsZeroWhenUserOwnsWholeUniverse(): void
     {
-        $this->viewRepository->method('countOwnedBucketsByFactionAndSet')->willReturn([
-            'BR|CORE' => ['1' => 2, '2' => 3, '3+' => 5],
-        ]);
+        $this->viewRepository->method('findOwnedCardQuantities')
+            ->willReturn($this->ownedRows('BR', 'CORE', 2, 3, 5));
         $this->client->method('countCardsBySetAndFaction')
             ->willReturnCallback(
                 static fn (string $set, string $faction): int =>
@@ -120,9 +155,8 @@ class CollectionPlaysetServiceTest extends TestCase
     public function testComputePlaysetClampsZeroBucketAtZeroOnDataDrift(): void
     {
         // User owns more references than altered-core reports as the universe.
-        $this->viewRepository->method('countOwnedBucketsByFactionAndSet')->willReturn([
-            'YZ|EOLE' => ['1' => 5, '2' => 0, '3+' => 0],
-        ]);
+        $this->viewRepository->method('findOwnedCardQuantities')
+            ->willReturn($this->ownedRows('YZ', 'EOLE', 5, 0, 0));
         $this->client->method('countCardsBySetAndFaction')->willReturn(3);
 
         $grid = $this->service->computePlayset($this->user)['byFactionAndSet'];
@@ -131,12 +165,52 @@ class CollectionPlaysetServiceTest extends TestCase
         $this->assertSame(0, $q['0']);
     }
 
+    public function testComputePlaysetMergesCoreAndCoreksAtTheCardLevel(): void
+    {
+        // Same card owned 1×COREKS + 2×CORE → a single card ×3 (bucket "3+").
+        // A CORE-only card ×1 and a COREKS-only card ×1 → two cards in bucket "1".
+        $this->viewRepository->method('findOwnedCardQuantities')->willReturn([
+            ['faction' => 'AX', 'cardSet' => 'CORE',   'cardReference' => 'ALT_CORE_B_AX_01_C',   'quantity' => 2],
+            ['faction' => 'AX', 'cardSet' => 'COREKS', 'cardReference' => 'ALT_COREKS_B_AX_01_C', 'quantity' => 1],
+            ['faction' => 'AX', 'cardSet' => 'CORE',   'cardReference' => 'ALT_CORE_B_AX_02_C',   'quantity' => 1],
+            ['faction' => 'AX', 'cardSet' => 'COREKS', 'cardReference' => 'ALT_COREKS_B_AX_03_C', 'quantity' => 1],
+        ]);
+        // universe large enough to keep bucket 0 positive; only CORE is ever queried.
+        $this->client->method('countCardsBySetAndFaction')
+            ->willReturnCallback(
+                static fn (string $set, string $faction): int =>
+                    ($set === 'CORE' && $faction === 'AX') ? 10 : 0,
+            );
+
+        $grid = $this->service->computePlayset($this->user)['byFactionAndSet'];
+        $q    = $this->findCombo($grid, 'AX', 'CORE')['quantities'];
+
+        $this->assertSame(2, $q['1']);   // the two single-edition cards
+        $this->assertSame(0, $q['2']);
+        $this->assertSame(1, $q['3+']);  // 1×COREKS + 2×CORE merged into one ×3 card
+        $this->assertSame(7, $q['0']);   // 10 universe − 3 owned distinct cards
+    }
+
+    public function testComputePlaysetNeverLooksUpTheCoreksUniverse(): void
+    {
+        $this->viewRepository->method('findOwnedCardQuantities')->willReturn([]);
+
+        $this->client->expects($this->atLeastOnce())
+            ->method('countCardsBySetAndFaction')
+            ->willReturnCallback(function (string $set): int {
+                $this->assertNotSame('COREKS', $set, 'COREKS universe must never be queried; CORE covers it.');
+                return 0;
+            });
+
+        $this->service->computePlayset($this->user);
+    }
+
     public function testComputePlaysetByFactionSumsAcrossAllSets(): void
     {
         // AX owns cards in two different sets; the per-faction total must sum both.
-        $this->viewRepository->method('countOwnedBucketsByFactionAndSet')->willReturn([
-            'AX|CORE'  => ['1' => 2, '2' => 1, '3+' => 0],
-            'AX|ALIZE' => ['1' => 3, '2' => 0, '3+' => 4],
+        $this->viewRepository->method('findOwnedCardQuantities')->willReturn([
+            ...$this->ownedRows('AX', 'CORE',  2, 1, 0),
+            ...$this->ownedRows('AX', 'ALIZE', 3, 0, 4),
         ]);
         $this->client->method('countCardsBySetAndFaction')
             ->willReturnCallback(
@@ -155,7 +229,7 @@ class CollectionPlaysetServiceTest extends TestCase
         $byFaction = $this->service->computePlayset($this->user)['byFaction'];
         $ax        = $this->findBy($byFaction, 'faction', 'AX')['quantities'];
 
-        // 0: 7 + 13 (+ zeros from the other five sets) = 20
+        // 0: 7 + 13 (+ zeros from the other four sets) = 20
         $this->assertSame(20, $ax['0']);
         $this->assertSame(5,  $ax['1']);  // 2 + 3
         $this->assertSame(1,  $ax['2']);  // 1 + 0
@@ -165,9 +239,9 @@ class CollectionPlaysetServiceTest extends TestCase
     public function testComputePlaysetBySetSumsAcrossAllFactions(): void
     {
         // Two factions own cards in CORE; the per-set total must sum both.
-        $this->viewRepository->method('countOwnedBucketsByFactionAndSet')->willReturn([
-            'AX|CORE' => ['1' => 2, '2' => 1, '3+' => 0],
-            'BR|CORE' => ['1' => 1, '2' => 0, '3+' => 3],
+        $this->viewRepository->method('findOwnedCardQuantities')->willReturn([
+            ...$this->ownedRows('AX', 'CORE', 2, 1, 0),
+            ...$this->ownedRows('BR', 'CORE', 1, 0, 3),
         ]);
         $this->client->method('countCardsBySetAndFaction')
             ->willReturnCallback(
@@ -194,11 +268,16 @@ class CollectionPlaysetServiceTest extends TestCase
 
     public function testComputePlaysetForwardsUserSetsRaritiesAndCardTypesToCollaborators(): void
     {
+        $expectedSets = array_values(array_unique(array_merge(
+            CollectionPlaysetService::SETS,
+            array_keys(CollectionPlaysetService::SET_ALIASES),
+        )));
+
         $this->viewRepository->expects($this->once())
-            ->method('countOwnedBucketsByFactionAndSet')
+            ->method('findOwnedCardQuantities')
             ->with(
                 $this->user,
-                CollectionPlaysetService::SETS,
+                $expectedSets,
                 CollectionPlaysetService::RARITIES,
                 CollectionPlaysetService::CARD_TYPES,
             )
