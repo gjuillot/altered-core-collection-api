@@ -27,9 +27,10 @@ use App\Repository\CollectionCardViewRepository;
  * which would double-count the same card. The merged set's universe is the canonical edition's
  * (CORE), since COREKS adds no new references.
  *
- * Both the universe lookup and the owned counts are restricted to {@see self::RARITIES} and
- * {@see self::CARD_TYPES} (UNIQUE rarities, tokens and other card types are excluded), so that
- * the "0" bucket — universe minus owned — stays internally consistent.
+ * Both the universe lookup and the owned counts are restricted to a set of rarities — by default
+ * {@see self::RARITIES}, or a caller-supplied subset of it — and to {@see self::CARD_TYPES}
+ * (UNIQUE rarities, tokens and other card types are always excluded), so that the "0" bucket —
+ * universe minus owned — stays internally consistent.
  *
  * The response carries three views of the same data:
  *   - "byFactionAndSet" — the full faction × set grid,
@@ -53,7 +54,10 @@ class CollectionPlaysetService
     /** Altered factions, in output order. */
     public const FACTIONS = ['AX', 'BR', 'LY', 'MU', 'OR', 'YZ'];
 
-    /** Rarities counted on both sides of the bucket-0 computation. */
+    /**
+     * Rarities counted on both sides of the bucket-0 computation, and the full set of values a
+     * caller may restrict the computation to.
+     */
     public const RARITIES = ['COMMON', 'RARE', 'EXALTED'];
 
     /** Card types counted on both sides of the bucket-0 computation. */
@@ -65,18 +69,22 @@ class CollectionPlaysetService
     ) {}
 
     /**
+     * @param  list<string>|null $rarities  Subset of {@see self::RARITIES} to compute on; null
+     *                                       (the default) counts all of them.
      * @return array{
      *     byFactionAndSet: list<array{faction:string, cardSet:string, quantities:array{0:int, 1:int, 2:int, '3+':int}}>,
      *     byFaction: list<array{faction:string, quantities:array{0:int, 1:int, 2:int, '3+':int}}>,
      *     bySet: list<array{cardSet:string, quantities:array{0:int, 1:int, 2:int, '3+':int}}>
      * }
      */
-    public function computePlayset(User $user): array
+    public function computePlayset(User $user, ?array $rarities = null): array
     {
+        $rarities ??= self::RARITIES;
+
         // Query every underlying edition (the output sets plus their merged sources), then fold
         // each card onto its canonical edition and bucket the merged per-card quantities.
         $sourceSets = array_values(array_unique(array_merge(self::SETS, array_keys(self::SET_ALIASES))));
-        $rows       = $this->viewRepository->findOwnedCardQuantities($user, $sourceSets, self::RARITIES, self::CARD_TYPES);
+        $rows       = $this->viewRepository->findOwnedCardQuantities($user, $sourceSets, $rarities, self::CARD_TYPES);
         $owned      = $this->mergeAndBucket($rows);
 
         $byFactionAndSet = [];
@@ -88,7 +96,7 @@ class CollectionPlaysetService
                 $buckets = $owned[$faction . '|' . $set] ?? ['1' => 0, '2' => 0, '3+' => 0];
 
                 $ownedNonZero = $buckets['1'] + $buckets['2'] + $buckets['3+'];
-                $universe     = $this->alteredCoreClient->countCardsBySetAndFaction($set, $faction, self::RARITIES, self::CARD_TYPES);
+                $universe     = $this->alteredCoreClient->countCardsBySetAndFaction($set, $faction, $rarities, self::CARD_TYPES);
 
                 $quantities = [
                     '0'  => max(0, $universe - $ownedNonZero),

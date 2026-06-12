@@ -74,6 +74,8 @@ homepage:
   playset_view_byFactionAndSet: "Grille complète faction × set"
   playset_view_byFaction: "Totaux par faction (somme de tous les sets)"
   playset_view_bySet: "Totaux par set (somme de toutes les factions)"
+  playset_filter_title: "Filtre (paramètre de requête)"
+  playset_filter_rarity: "Restreint le calcul à un sous-ensemble de raretés. Répétable. Si absent, les trois sont comptabilisées."
 
   footer_text: "Altered Collection API — Projet personnel. Non affilié à Equinox."
   footer_link: "Documentation API →"
