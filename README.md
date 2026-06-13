@@ -160,6 +160,61 @@ For bulk operations (max **100** items per request):
 > POST batch silently skips cards already present (`skipped`) and fetches all metadata in a single call to altered-core.
 > PATCH / DELETE batch silently ignore IDs that do not exist or belong to another user.
 
+### Playset endpoints
+
+Read-only views for tracking **playset completion**. Only COMMON / RARE / EXALTED rarities and CHARACTER / SPELL / PERMANENT (incl. LANDMARK_PERMANENT / EXPEDITION_PERMANENT) types are considered; heroes and UNIQUE are excluded. CORE and COREKS share the same cards and are merged into a single CORE set, and a card's products (B booster, A/P alt-art / promo) are folded onto the B reference — both endpoints apply the same merge.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/collection/playset` | Completion stats per faction × set × quantity bucket (0, 1, 2, 3+), plus per-faction and per-set aggregates. |
+| GET | `/api/collection/playset/cards` | The whole playset universe, card by card — including cards owned in 0 copies (the "shopping list" view). Paginated. |
+
+#### `GET /api/collection/playset/cards`
+
+Lists every playset card grouped by base reference, each with its versions (C, R1, R2, E) and a per-version `owned` count. `owned` is **raw and uncapped** (foil + non-foil and every card product summed): COREKS copies and A/P alt-art / promo printings are folded onto the canonical **B** version. Cards owned in 0 copies are included.
+
+Query parameters (all optional, combinable):
+
+| Param | Description |
+|---|---|
+| `locale` | Locale for the localized `name` (default `en`). |
+| `cardSet[]` | Filter by set reference (card level), e.g. `cardSet[]=DUSTER`. |
+| `faction[]` | Filter by the version's **real** faction, e.g. `faction[]=AX` (a transfuge R2 is matched on its host faction, e.g. Bravos). |
+| `cardType[]` | Filter by card type (card level): `CHARACTER`, `SPELL`, `PERMANENT`. |
+| `rarity[]` | Keep only these version rarities: `COMMON`, `RARE` (keeps both R1 and R2), `EXALTED`. Omitted = whole perimeter. |
+| `name` | Case-insensitive partial match on the localized name. |
+| `copies[]` | Keep cards with at least one version owned in a bucket: `0`, `1-2`, `3`, `4plus`. |
+| `page` | Page number (default 1). |
+| `itemsPerPage` | Cards per page (default 30, max 100). |
+
+```jsonc
+{
+  "summary": {
+    "totalCards": 587,        // cards matching the filters
+    "totalVersions": 1542,    // versions cumulated across those cards
+    "totalOwned": 768,        // total COPIES owned (sum of every version's owned, NOT a version count)
+    "ownedBuckets": { "0": 1230, "1-2": 200, "3": 80, "4plus": 32 } // versions per owned tier; sum = totalVersions (1542)
+  }, // totals over the whole filtered result, all pages
+  "items": [
+    {
+      "baseReference": "ALT_DUSTER_B_AX_88",
+      "name": "Ira, Fair Attendee",
+      "cardSet": "DUSTER",
+      "cardType": "CHARACTER",
+      "versions": [
+        { "reference": "ALT_DUSTER_B_AX_88_C",  "collectorNumberFormatedId": "SDU-002-C-EN", "faction": "AX", "rarity": "COMMON", "transfuge": false, "owned": 2, "imagePath": "https://.../en_US/...jpg" },
+        { "reference": "ALT_DUSTER_B_AX_88_R1", "collectorNumberFormatedId": "SDU-002-R-EN", "faction": "AX", "rarity": "RARE",   "transfuge": false, "owned": 0, "imagePath": "..." },
+        { "reference": "ALT_DUSTER_B_AX_88_R2", "collectorNumberFormatedId": "SDU-002-F-EN", "faction": "BR", "rarity": "RARE",   "transfuge": true,  "owned": 0, "imagePath": "..." }
+      ]
+    }
+  ],
+  "page": 1, "itemsPerPage": 30, "totalItems": 587, "totalPages": 20
+}
+```
+
+> Fields use the same flattened format as `/api/collection` (single-locale strings; faction / rarity / cardType as codes).
+> A version printed in several products (e.g. an alt-art) additionally carries `ownedCardProducts` — the list of products you own a copy of (e.g. `["A","B"]`).
+
 ### Adding a card (example)
 
 ```bash
@@ -436,6 +491,61 @@ Pour les opérations en masse (max **100** éléments par requête) :
 
 > Le POST batch ignore silencieusement les cartes déjà présentes (`skipped`) et récupère toutes les métadonnées en un seul appel à altered-core.
 > Le PATCH / DELETE batch ignorent silencieusement les IDs inexistants ou appartenant à un autre utilisateur.
+
+### Endpoints playset
+
+Vues en lecture seule pour suivre la **complétion du playset**. Seules les raretés COMMON / RARE / EXALTED et les types CHARACTER / SPELL / PERMANENT (dont LANDMARK_PERMANENT / EXPEDITION_PERMANENT) sont pris en compte ; les héros et la rareté UNIQUE sont exclus. CORE et COREKS partagent les mêmes cartes et sont fusionnés sous un seul set CORE, et les produits d'une carte (B booster, A/P alt-art / promo) sont repliés sur la référence B — les deux endpoints appliquent la même fusion.
+
+| Méthode | Endpoint | Description |
+|---|---|---|
+| GET | `/api/collection/playset` | Statistiques de complétion par faction × set × bucket de quantité (0, 1, 2, 3+), avec agrégats par faction et par set. |
+| GET | `/api/collection/playset/cards` | Tout l'univers playset, carte par carte — y compris les cartes possédées en 0 exemplaire (vue « liste de courses »). Paginé. |
+
+#### `GET /api/collection/playset/cards`
+
+Liste chaque carte du playset regroupée par référence de base, avec ses versions (C, R1, R2, E) et un `owned` par version. `owned` est **brut et non plafonné** (foil + non-foil et tous les cardProducts confondus) : les exemplaires COREKS et les réimpressions A/P (alt-art / promo) sont repliés sur la version **B** canonique. Les cartes possédées en 0 exemplaire sont incluses.
+
+Paramètres de requête (tous optionnels, combinables) :
+
+| Param | Description |
+|---|---|
+| `locale` | Locale du nom localisé (défaut `en`). |
+| `cardSet[]` | Filtre par référence de set (niveau carte), ex. `cardSet[]=DUSTER`. |
+| `faction[]` | Filtre par faction **réelle** de la version, ex. `faction[]=AX` (une R2 transfuge est filtrée sur sa faction d'accueil, ex. Bravos). |
+| `cardType[]` | Filtre par type (niveau carte) : `CHARACTER`, `SPELL`, `PERMANENT`. |
+| `rarity[]` | Ne garde que ces raretés de version : `COMMON`, `RARE` (garde R1 **et** R2), `EXALTED`. Omis = tout le périmètre. |
+| `name` | Recherche partielle insensible à la casse sur le nom localisé. |
+| `copies[]` | Garde les cartes dont au moins une version a un owned dans un bucket : `0`, `1-2`, `3`, `4plus`. |
+| `page` | Numéro de page (défaut 1). |
+| `itemsPerPage` | Nombre de cartes par page (défaut 30, max 100). |
+
+```jsonc
+{
+  "summary": {
+    "totalCards": 587,        // cartes correspondant aux filtres
+    "totalVersions": 1542,    // versions cumulées sur ces cartes
+    "totalOwned": 768,        // nombre total d'EXEMPLAIRES possédés (somme des owned, PAS un comptage de versions)
+    "ownedBuckets": { "0": 1230, "1-2": 200, "3": 80, "4plus": 32 } // versions par palier d'owned ; somme = totalVersions (1542)
+  }, // totaux sur tout le résultat filtré, toutes pages
+  "items": [
+    {
+      "baseReference": "ALT_DUSTER_B_AX_88",
+      "name": "Ira, Participant à la Foire",
+      "cardSet": "DUSTER",
+      "cardType": "CHARACTER",
+      "versions": [
+        { "reference": "ALT_DUSTER_B_AX_88_C",  "collectorNumberFormatedId": "SDU-002-C-EN", "faction": "AX", "rarity": "COMMON", "transfuge": false, "owned": 2, "imagePath": "https://.../fr_FR/...jpg" },
+        { "reference": "ALT_DUSTER_B_AX_88_R1", "collectorNumberFormatedId": "SDU-002-R-EN", "faction": "AX", "rarity": "RARE",   "transfuge": false, "owned": 0, "imagePath": "..." },
+        { "reference": "ALT_DUSTER_B_AX_88_R2", "collectorNumberFormatedId": "SDU-002-F-EN", "faction": "BR", "rarity": "RARE",   "transfuge": true,  "owned": 0, "imagePath": "..." }
+      ]
+    }
+  ],
+  "page": 1, "itemsPerPage": 30, "totalItems": 587, "totalPages": 20
+}
+```
+
+> Les champs reprennent le format aplati de `/api/collection` (chaînes mono-locale ; faction / rareté / type en codes).
+> Une version imprimée en plusieurs produits (ex. un alt-art) expose en plus `ownedCardProducts` — la liste des produits dont vous possédez un exemplaire (ex. `["A","B"]`).
 
 ### Ajout d'une carte (exemple)
 
