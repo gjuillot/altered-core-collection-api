@@ -81,57 +81,94 @@ class AlteredCoreClient
     }
 
     /**
-     * Count the cards (= distinct references) that exist in a given set, for a given faction,
-     * restricted to the given rarities and card types. Used to size the "not owned" bucket of
-     * the collection statistics. Cached for 1 hour.
+     * Fetch the full playset "universe" — every standard card that exists in the given sets,
+     * restricted to the given rarities and card types — from altered-core, following pagination
+     * to completion. Used by {@see \App\Service\CollectionPlaysetCardsService} to list the whole
+     * universe card-by-card (including cards the user owns in 0 copies).
      *
-     * We only need the total, not the cards themselves, so we request `itemsPerPage=1` and read
-     * the collection-wide `totalItems` (authoritative across all pages). The endpoint requires
-     * the rarity filter to be supplied. Falls back to counting distinct references in the member
-     * list if no total field is present. No locale is sent: the count is language-independent.
+     * The cards are returned with their multilingual fields intact (name, imagePath, …) and
+     * trimmed to only what the playset/cards endpoint needs, so a single cache entry serves every
+     * locale. Cached for 1 hour. Sorted in the site's native order (set date desc, then collector
+     * number asc).
      *
-     * @param string[] $rarities
-     * @param string[] $cardTypes
+     * @param  string[] $sets       canonical set references (no aliases — e.g. CORE, not COREKS)
+     * @param  string[] $rarities
+     * @param  string[] $cardTypes
+     * @return list<array{
+     *     reference:string,
+     *     collectorNumberFormatedId:?string,
+     *     transfuge:bool,
+     *     set:array{reference:?string, name:?string, code:?string},
+     *     faction:array{code:?string},
+     *     rarity:array{reference:?string},
+     *     cardType:array{reference:?string},
+     *     name:array<string,string>|string|null,
+     *     imagePath:array<string,string>|string|null
+     * }>
      */
-    public function countCardsBySetAndFaction(string $set, string $faction, array $rarities, array $cardTypes): int
+    public function fetchPlaysetUniverse(array $sets, array $rarities, array $cardTypes): array
     {
-        sort($rarities);  // stable cache key regardless of argument order
-        sort($cardTypes);
-        $cacheKey = 'card_count_' . md5($set . '_' . $faction . '_' . implode(',', $rarities) . '_' . implode(',', $cardTypes));
+        if (empty($sets) || empty($rarities) || empty($cardTypes)) {
+            return [];
+        }
 
-        return $this->cache->get($cacheKey, function (ItemInterface $item) use ($set, $faction, $rarities, $cardTypes): int {
+        sort($sets);       // stable cache key regardless of argument order
+        sort($rarities);
+        sort($cardTypes);
+        $cacheKey = 'playset_universe_' . md5(implode(',', $sets) . '|' . implode(',', $rarities) . '|' . implode(',', $cardTypes));
+
+        return $this->cache->get($cacheKey, function (ItemInterface $item) use ($sets, $rarities, $cardTypes): array {
             $item->expiresAfter(3600);
 
-            $response = $this->httpClient->request('GET', $this->alteredCoreUrl . '/api/cards', [
-                'query' => [
-                    'set.reference' => [$set],
-                    'faction.code'  => [$faction],
-                    'rarity'        => $rarities,
-                    'cardType'      => $cardTypes,
-                    'itemsPerPage'  => 1,
-                ],
-            ]);
+            $cards        = [];
+            $page         = 1;
+            $itemsPerPage = 250;
 
-            $data = $response->toArray();
+            do {
+                $response = $this->httpClient->request('GET', $this->alteredCoreUrl . '/api/cards', [
+                    'query' => [
+                        'set.reference' => $sets,
+                        'rarity'        => $rarities,
+                        'cardType'      => $cardTypes,
+                        'variation'     => ['standard'],
+                        'itemsPerPage'  => $itemsPerPage,
+                        'page'          => $page,
+                        'order'         => ['set.date' => 'desc', 'collectorNumberFormatedId' => 'asc'],
+                    ],
+                ]);
 
-            if (isset($data['totalItems'])) {
-                return (int) $data['totalItems'];
-            }
-            if (isset($data['hydra:totalItems'])) {
-                return (int) $data['hydra:totalItems'];
-            }
+                $data    = $response->toArray();
+                $members = $data['member'] ?? $data['hydra:member'] ?? [];
 
-            $cards = $data['member'] ?? $data['hydra:member'] ?? $data;
-            if (!is_array($cards)) {
-                return 0;
-            }
+                foreach ($members as $card) {
+                    if (!is_array($card) || empty($card['reference'])) {
+                        continue;
+                    }
+                    $cards[] = [
+                        'reference'                 => $card['reference'],
+                        'collectorNumberFormatedId' => $card['collectorNumberFormatedId'] ?? null,
+                        'transfuge'                 => (bool) ($card['transfuge'] ?? false),
+                        'set'                       => [
+                            'reference' => $card['set']['reference'] ?? null,
+                            'name'      => $card['set']['name'] ?? null,
+                            'code'      => $card['set']['code'] ?? null,
+                        ],
+                        'faction'  => ['code' => $card['faction']['code'] ?? null],
+                        'rarity'   => ['reference' => $card['rarity']['reference'] ?? null],
+                        'cardType' => ['reference' => $card['cardType']['reference'] ?? null],
+                        'name'      => $card['name'] ?? null,
+                        'imagePath' => $card['imagePath'] ?? null,
+                    ];
+                }
 
-            $refs = array_filter(array_map(
-                static fn($card) => is_array($card) ? ($card['reference'] ?? null) : null,
-                $cards,
-            ));
+                $lastPage = isset($data['lastPage']) ? (int) $data['lastPage'] : null;
+                $page++;
+                $hasMore = $lastPage !== null
+                    ? $page <= $lastPage
+                    : count($members) === $itemsPerPage; // fallback: stop on a short/empty page
+            } while ($hasMore);
 
-            return count(array_unique($refs));
+            return $cards;
         });
     }
 }

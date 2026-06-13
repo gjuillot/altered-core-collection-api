@@ -16,8 +16,9 @@ use App\Repository\CollectionCardViewRepository;
  *   "3+" → owned with quantity 3 or more.
  *
  * The grid is always emitted in full: every faction × set combination appears, even when
- * all of its counts are zero. The "universe" (total existing references) is fetched from
- * altered-core, one (set, faction) couple at a time, and cached there for 1 hour.
+ * all of its counts are zero. The "universe" (total existing references) is derived from the
+ * shared playset universe fetched from altered-core (variation standard, cached 1 hour) and
+ * counted per faction × set after product-normalising references — so both endpoints agree.
  *
  * Some editions share the same cards and are merged into a single output set (see
  * {@see self::SET_ALIASES}): CORE and COREKS hold identical cards, so a card owned across both
@@ -26,6 +27,10 @@ use App\Repository\CollectionCardViewRepository;
  * works from raw per-card quantities and buckets them itself, rather than summing SQL buckets
  * which would double-count the same card. The merged set's universe is the canonical edition's
  * (CORE), since COREKS adds no new references.
+ *
+ * Likewise, a card printed in several products (the reference's 3rd token: B booster, A/P alt-art
+ * or promo) is collapsed onto its booster (B) reference on both sides of the count, so owning an A
+ * printing counts toward the same reference as the B — consistent with {@see CollectionPlaysetCardsService}.
  *
  * Both the universe lookup and the owned counts are restricted to {@see self::RARITIES} and
  * {@see self::CARD_TYPES} (UNIQUE rarities, tokens and other card types are excluded), so that
@@ -75,9 +80,10 @@ class CollectionPlaysetService
     {
         // Query every underlying edition (the output sets plus their merged sources), then fold
         // each card onto its canonical edition and bucket the merged per-card quantities.
-        $sourceSets = array_values(array_unique(array_merge(self::SETS, array_keys(self::SET_ALIASES))));
-        $rows       = $this->viewRepository->findOwnedCardQuantities($user, $sourceSets, self::RARITIES, self::CARD_TYPES);
-        $owned      = $this->mergeAndBucket($rows);
+        $sourceSets     = array_values(array_unique(array_merge(self::SETS, array_keys(self::SET_ALIASES))));
+        $rows           = $this->viewRepository->findOwnedCardQuantities($user, $sourceSets, self::RARITIES, self::CARD_TYPES);
+        $owned          = $this->mergeAndBucket($rows);
+        $universeCounts = $this->universeCountsByFactionAndSet();
 
         $byFactionAndSet = [];
         $factionTotals   = array_fill_keys(self::FACTIONS, ['0' => 0, '1' => 0, '2' => 0, '3+' => 0]);
@@ -88,7 +94,7 @@ class CollectionPlaysetService
                 $buckets = $owned[$faction . '|' . $set] ?? ['1' => 0, '2' => 0, '3+' => 0];
 
                 $ownedNonZero = $buckets['1'] + $buckets['2'] + $buckets['3+'];
-                $universe     = $this->alteredCoreClient->countCardsBySetAndFaction($set, $faction, self::RARITIES, self::CARD_TYPES);
+                $universe     = $universeCounts[$faction . '|' . $set] ?? 0;
 
                 $quantities = [
                     '0'  => max(0, $universe - $ownedNonZero),
@@ -124,6 +130,39 @@ class CollectionPlaysetService
             'byFaction'       => $byFaction,
             'bySet'           => $bySet,
         ];
+    }
+
+    /**
+     * Count the universe references per faction × set from the shared playset universe (variation
+     * standard). References are product-normalised before counting, so the A/P printings of a card
+     * collapse onto its booster (B) reference and are counted once — consistent with the owned side
+     * and with {@see CollectionPlaysetCardsService}. The universe is queried for the canonical sets
+     * only ({@see self::SETS}); COREKS adds no new references.
+     *
+     * @return array<string, int>  "FACTION|CARDSET" => distinct reference count
+     */
+    private function universeCountsByFactionAndSet(): array
+    {
+        $universe = $this->alteredCoreClient->fetchPlaysetUniverse(self::SETS, self::RARITIES, self::CARD_TYPES);
+
+        $seen   = [];
+        $counts = [];
+        foreach ($universe as $card) {
+            $reference = $this->canonicalReference($card['reference']);
+            if (isset($seen[$reference])) {
+                continue; // another product of the same card already counted
+            }
+            $seen[$reference] = true;
+
+            $faction = $card['faction']['code'] ?? null;
+            $set     = $card['set']['reference'] ?? null;
+            if ($faction === null || $set === null) {
+                continue;
+            }
+            $counts[$faction . '|' . $set] = ($counts[$faction . '|' . $set] ?? 0) + 1;
+        }
+
+        return $counts;
     }
 
     /**
@@ -169,18 +208,23 @@ class CollectionPlaysetService
     }
 
     /**
-     * Rewrite a reference's set token onto its canonical edition so the same card across merged
-     * editions collapses to one key, e.g. ALT_COREKS_B_AX_01_C → ALT_CORE_B_AX_01_C.
+     * Rewrite a reference onto its canonical printing so every product/edition of the same card
+     * collapses to one key: the set token is folded onto its canonical edition (COREKS → CORE) and
+     * the product token (3rd) is normalised to the booster product (B).
+     * ALT_COREKS_A_AX_01_C → ALT_CORE_B_AX_01_C. Mirrors {@see CollectionPlaysetCardsService}.
      */
     private function canonicalReference(string $reference): string
     {
-        foreach (self::SET_ALIASES as $source => $target) {
-            $prefix = 'ALT_' . $source . '_';
-            if (str_starts_with($reference, $prefix)) {
-                return 'ALT_' . $target . '_' . substr($reference, strlen($prefix));
-            }
+        $parts = explode('_', $reference);
+
+        // parts: [ALT, SET, PRODUCT, FACTION, NUM, SUFFIX, ...]
+        if (isset($parts[1]) && isset(self::SET_ALIASES[$parts[1]])) {
+            $parts[1] = self::SET_ALIASES[$parts[1]];
+        }
+        if (isset($parts[2])) {
+            $parts[2] = 'B';
         }
 
-        return $reference;
+        return implode('_', $parts);
     }
 }

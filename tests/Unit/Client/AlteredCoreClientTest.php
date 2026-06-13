@@ -114,7 +114,7 @@ class AlteredCoreClientTest extends TestCase
         $this->assertSame('https://altered.example.com', $this->client->getBaseUrl());
     }
 
-    // ── countCardsBySetAndFaction ───────────────────────────────────────────────
+    // ── fetchPlaysetUniverse ─────────────────────────────────────────────────────
 
     private function mockCacheMiss(): void
     {
@@ -126,12 +126,38 @@ class AlteredCoreClientTest extends TestCase
             });
     }
 
-    public function testCountCardsBySetAndFactionSendsArrayFiltersRaritiesAndCardTypes(): void
+    public function testFetchPlaysetUniverseReturnsEmptyArrayForEmptyArguments(): void
+    {
+        $this->httpClient->expects($this->never())->method('request');
+
+        $this->assertSame([], $this->client->fetchPlaysetUniverse([], ['COMMON'], ['CHARACTER']));
+        $this->assertSame([], $this->client->fetchPlaysetUniverse(['CORE'], [], ['CHARACTER']));
+        $this->assertSame([], $this->client->fetchPlaysetUniverse(['CORE'], ['COMMON'], []));
+    }
+
+    public function testFetchPlaysetUniverseSendsPerimeterFiltersAndTrimsCards(): void
     {
         $this->mockCacheMiss();
 
         $response = $this->createMock(ResponseInterface::class);
-        $response->method('toArray')->willReturn(['totalItems' => 92, 'member' => []]);
+        $response->method('toArray')->willReturn([
+            'member' => [[
+                'reference'                 => 'ALT_DUSTER_B_AX_88_C',
+                'collectorNumberFormatedId' => 'SDU-002-C-EN',
+                'transfuge'                 => false,
+                'set'                       => ['name' => 'Seeds of Unity', 'code' => 'SDU', 'reference' => 'DUSTER'],
+                'faction'                   => ['id' => 1, 'name' => 'Axiom', 'code' => 'AX', 'position' => 1],
+                'rarity'                    => ['id' => 3, 'reference' => 'COMMON'],
+                'cardType'                  => ['id' => 2, 'reference' => 'CHARACTER'],
+                'name'                      => ['en' => 'Ira', 'fr' => 'Ira'],
+                'imagePath'                 => ['en' => 'ira-en.jpg'],
+                'mainEffect'                => ['en' => 'huge irrelevant blob'], // must be trimmed away
+            ]],
+            'totalItems'   => 1,
+            'currentPage'  => 1,
+            'itemsPerPage' => 250,
+            'lastPage'     => 1,
+        ]);
 
         $this->httpClient->expects($this->once())
             ->method('request')
@@ -140,63 +166,68 @@ class AlteredCoreClientTest extends TestCase
                 'https://altered.example.com/api/cards',
                 $this->callback(function (array $options): bool {
                     $q = $options['query'];
-                    // The client sorts rarities/cardTypes for a stable cache key, so compare unordered.
-                    $rarity   = $q['rarity'];   sort($rarity);
-                    $cardType = $q['cardType']; sort($cardType);
-                    return $q['set.reference'] === ['ALIZE']
-                        && $q['faction.code'] === ['AX']
+                    // The client sorts sets/rarities/cardTypes for a stable cache key; compare unordered.
+                    $sets = $q['set.reference']; sort($sets);
+                    $rarity = $q['rarity']; sort($rarity);
+                    return $sets === ['CORE', 'DUSTER']
                         && $rarity === ['COMMON', 'EXALTED', 'RARE']
-                        && $cardType === ['CHARACTER', 'SPELL']
-                        && $q['itemsPerPage'] === 1
-                        && !array_key_exists('locale', $q); // counts are language-independent
+                        && $q['cardType'] === ['CHARACTER']
+                        && $q['variation'] === ['standard']
+                        && $q['page'] === 1
+                        && isset($q['order']['set.date'], $q['order']['collectorNumberFormatedId']);
                 }),
             )
             ->willReturn($response);
 
-        $this->assertSame(92, $this->client->countCardsBySetAndFaction(
-            'ALIZE', 'AX', ['COMMON', 'RARE', 'EXALTED'], ['CHARACTER', 'SPELL'],
-        ));
+        $universe = $this->client->fetchPlaysetUniverse(['CORE', 'DUSTER'], ['COMMON', 'RARE', 'EXALTED'], ['CHARACTER']);
+
+        $this->assertCount(1, $universe);
+        $card = $universe[0];
+        $this->assertSame('ALT_DUSTER_B_AX_88_C', $card['reference']);
+        $this->assertSame('SDU-002-C-EN', $card['collectorNumberFormatedId']);
+        $this->assertFalse($card['transfuge']);
+        $this->assertSame('AX', $card['faction']['code']);
+        $this->assertSame('DUSTER', $card['set']['reference']);
+        $this->assertSame('COMMON', $card['rarity']['reference']);
+        $this->assertSame('CHARACTER', $card['cardType']['reference']);
+        $this->assertSame(['en' => 'Ira', 'fr' => 'Ira'], $card['name']);
+        // Heavy fields are trimmed out of the cached universe.
+        $this->assertArrayNotHasKey('mainEffect', $card);
     }
 
-    public function testCountCardsBySetAndFactionUsesTotalItemsOverMemberCount(): void
+    public function testFetchPlaysetUniverseFollowsPaginationToLastPage(): void
     {
         $this->mockCacheMiss();
 
-        $response = $this->createMock(ResponseInterface::class);
-        // member list is paginated/truncated, but totalItems is authoritative across pages
-        $response->method('toArray')->willReturn([
-            'totalItems'   => 130,
-            'member'       => [['reference' => 'ALT_CORE_B_AX_01_C']],
-            'itemsPerPage' => 1,
-            'lastPage'     => 130,
+        $page1 = $this->createMock(ResponseInterface::class);
+        $page1->method('toArray')->willReturn([
+            'member'   => [['reference' => 'ALT_CORE_B_AX_01_C', 'faction' => ['code' => 'AX'], 'set' => ['reference' => 'CORE']]],
+            'lastPage' => 2,
         ]);
-        $this->httpClient->method('request')->willReturn($response);
+        $page2 = $this->createMock(ResponseInterface::class);
+        $page2->method('toArray')->willReturn([
+            'member'   => [['reference' => 'ALT_CORE_B_AX_02_R1', 'faction' => ['code' => 'AX'], 'set' => ['reference' => 'CORE']]],
+            'lastPage' => 2,
+        ]);
 
-        $this->assertSame(130, $this->client->countCardsBySetAndFaction('CORE', 'AX', ['COMMON'], ['CHARACTER']));
+        $this->httpClient->expects($this->exactly(2))
+            ->method('request')
+            ->willReturnOnConsecutiveCalls($page1, $page2);
+
+        $universe = $this->client->fetchPlaysetUniverse(['CORE'], ['COMMON', 'RARE'], ['CHARACTER']);
+
+        $this->assertSame(
+            ['ALT_CORE_B_AX_01_C', 'ALT_CORE_B_AX_02_R1'],
+            array_column($universe, 'reference'),
+        );
     }
 
-    public function testCountCardsBySetAndFactionCountsDistinctReferencesWhenNoTotalField(): void
+    public function testFetchPlaysetUniverseReturnsCachedValueWithoutHttpCall(): void
     {
-        $this->mockCacheMiss();
-
-        $response = $this->createMock(ResponseInterface::class);
-        $response->method('toArray')->willReturn([
-            'member' => [
-                ['reference' => 'ALT_CORE_B_AX_01_C'],
-                ['reference' => 'ALT_CORE_B_AX_02_R'],
-                ['reference' => 'ALT_CORE_B_AX_01_C'], // duplicate must not be double-counted
-            ],
-        ]);
-        $this->httpClient->method('request')->willReturn($response);
-
-        $this->assertSame(2, $this->client->countCardsBySetAndFaction('CORE', 'AX', ['COMMON', 'RARE'], ['CHARACTER']));
-    }
-
-    public function testCountCardsBySetAndFactionReturnsCachedValueWithoutHttpCall(): void
-    {
-        $this->cache->method('get')->willReturn(7);
+        $cached = [['reference' => 'ALT_CORE_B_AX_01_C', 'faction' => ['code' => 'AX'], 'set' => ['reference' => 'CORE']]];
+        $this->cache->method('get')->willReturn($cached);
         $this->httpClient->expects($this->never())->method('request');
 
-        $this->assertSame(7, $this->client->countCardsBySetAndFaction('CORE', 'AX', ['COMMON'], ['CHARACTER']));
+        $this->assertSame($cached, $this->client->fetchPlaysetUniverse(['CORE'], ['COMMON'], ['CHARACTER']));
     }
 }
