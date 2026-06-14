@@ -75,6 +75,8 @@ homepage:
   playset_view_byFactionAndSet: "Full faction × set grid"
   playset_view_byFaction: "Totals per faction (sum across all sets)"
   playset_view_bySet: "Totals per set (sum across all factions)"
+  playset_filter_title: "Filter (query parameter)"
+  playset_filter_rarity: "Restricts the computation to a subset of rarities. Repeatable. When omitted, all three are counted."
 
   footer_text: "Altered Collection API — Personal project. Not affiliated with Equinox."
   footer_link: "API Documentation →"

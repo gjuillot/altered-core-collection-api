@@ -130,9 +130,20 @@ final class OpenApiDecorator implements OpenApiFactoryInterface
                         ]),
                     ),
                     401 => new Response(description: 'Non authentifié.'),
+                    422 => new Response(description: 'Rareté inconnue (valeurs autorisées : COMMON, RARE, EXALTED).'),
                 ],
                 summary:     'Statistiques de complétion du playset.',
-                description: "Pour chaque combinaison faction × set, retourne le nombre de références dans chaque bucket de quantité (0 = non possédé, 1, 2, 3+).\n\nLes éditions CORE et COREKS contiennent les mêmes cartes et sont fusionnées sous un seul set « CORE » : une carte possédée dans les deux éditions est comptée une seule fois avec la somme des quantités (ex. 1×COREKS + 2×CORE = une carte ×3, bucket « 3+ »). De même, les réimpressions d'une carte (cardProducts A/P alt-art ou promo) sont repliées sur sa version booster (B), côté univers comme côté possédé — cohérent avec GET /api/collection/playset/cards.\n\nSeules les raretés COMMON / RARE / EXALTED et les types CHARACTER / SPELL / PERMANENT / LANDMARK_PERMANENT / EXPEDITION_PERMANENT sont pris en compte. Les héros et les raretés UNIQUE sont exclus.",
+                description: "Pour chaque combinaison faction × set, retourne le nombre de références dans chaque bucket de quantité (0 = non possédé, 1, 2, 3+).\n\nLes éditions CORE et COREKS contiennent les mêmes cartes et sont fusionnées sous un seul set « CORE » : une carte possédée dans les deux éditions est comptée une seule fois avec la somme des quantités (ex. 1×COREKS + 2×CORE = une carte ×3, bucket « 3+ »). De même, les réimpressions d'une carte (cardProducts A/P alt-art ou promo) sont repliées sur sa version booster (B), côté univers comme côté possédé — cohérent avec GET /api/collection/playset/cards.\n\nSeules les raretés COMMON / RARE / EXALTED et les types CHARACTER / SPELL / PERMANENT / LANDMARK_PERMANENT / EXPEDITION_PERMANENT sont pris en compte. Les héros et les raretés UNIQUE sont exclus. Le paramètre `rarity[]` permet de restreindre le calcul à un sous-ensemble de ces raretés ; sans lui, les trois sont comptabilisées.",
+                parameters:  [
+                    new Parameter(
+                        name:        'rarity[]',
+                        in:          'query',
+                        description: 'Restreint le calcul à un sous-ensemble de raretés. Répétable : ?rarity[]=COMMON&rarity[]=RARE. Si absent, les trois raretés sont comptabilisées.',
+                        required:    false,
+                        schema:      ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['COMMON', 'RARE', 'EXALTED']]],
+                        explode:     true,
+                    ),
+                ],
                 security:    [['bearerAuth' => []]],
             ),
         ));

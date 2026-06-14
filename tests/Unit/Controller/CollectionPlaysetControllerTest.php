@@ -7,6 +7,7 @@ use App\Entity\User;
 use App\Service\CollectionPlaysetService;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class CollectionPlaysetControllerTest extends TestCase
@@ -43,10 +44,10 @@ class CollectionPlaysetControllerTest extends TestCase
 
         $this->playsetService->expects($this->once())
             ->method('computePlayset')
-            ->with($this->user)
+            ->with($this->user, null)
             ->willReturn($playset);
 
-        $response = $this->controller->__invoke();
+        $response = $this->controller->__invoke(Request::create('/api/collection/playset'));
 
         $this->assertSame(Response::HTTP_OK, $response->getStatusCode());
 
@@ -57,5 +58,45 @@ class CollectionPlaysetControllerTest extends TestCase
         $this->assertSame('AX', $data['byFaction'][0]['faction']);
         $this->assertSame('ALIZE', $data['bySet'][0]['cardSet']);
         $this->assertSame(57, $data['bySet'][0]['quantities']['3+']);
+    }
+
+    public function testForwardsRaritySubsetFromQueryToService(): void
+    {
+        $this->playsetService->expects($this->once())
+            ->method('computePlayset')
+            ->with($this->user, ['COMMON', 'RARE'])
+            ->willReturn(['byFactionAndSet' => [], 'byFaction' => [], 'bySet' => []]);
+
+        $response = $this->controller->__invoke(
+            Request::create('/api/collection/playset?rarity[]=COMMON&rarity[]=RARE'),
+        );
+
+        $this->assertSame(Response::HTTP_OK, $response->getStatusCode());
+    }
+
+    public function testDeduplicatesRepeatedRarities(): void
+    {
+        $this->playsetService->expects($this->once())
+            ->method('computePlayset')
+            ->with($this->user, ['EXALTED'])
+            ->willReturn(['byFactionAndSet' => [], 'byFaction' => [], 'bySet' => []]);
+
+        $this->controller->__invoke(
+            Request::create('/api/collection/playset?rarity[]=EXALTED&rarity[]=EXALTED'),
+        );
+    }
+
+    public function testRejectsUnknownRarityWith422AndNeverCallsService(): void
+    {
+        $this->playsetService->expects($this->never())->method('computePlayset');
+
+        $response = $this->controller->__invoke(
+            Request::create('/api/collection/playset?rarity[]=COMMON&rarity[]=UNIQUE'),
+        );
+
+        $this->assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $response->getStatusCode());
+
+        $data = json_decode($response->getContent(), true);
+        $this->assertStringContainsString('UNIQUE', $data['error']);
     }
 }

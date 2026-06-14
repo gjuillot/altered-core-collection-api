@@ -322,4 +322,34 @@ class CollectionPlaysetServiceTest extends TestCase
 
         $this->service->computePlayset($this->user);
     }
+
+    public function testComputePlaysetForwardsRaritySubsetToCollaborators(): void
+    {
+        $subset       = ['COMMON', 'RARE'];
+        $expectedSets = array_values(array_unique(array_merge(
+            CollectionPlaysetService::SETS,
+            array_keys(CollectionPlaysetService::SET_ALIASES),
+        )));
+
+        $this->viewRepository->expects($this->once())
+            ->method('findOwnedCardQuantities')
+            ->with(
+                $this->user,
+                $expectedSets,
+                $subset,
+                CollectionPlaysetService::CARD_TYPES,
+            )
+            ->willReturn([]);
+
+        $this->client->expects($this->once())
+            ->method('fetchPlaysetUniverse')
+            ->with(
+                CollectionPlaysetService::SETS,
+                $subset,
+                CollectionPlaysetService::CARD_TYPES,
+            )
+            ->willReturn([]);
+
+        $this->service->computePlayset($this->user, $subset);
+    }
 }

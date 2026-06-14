@@ -169,6 +169,17 @@ Read-only views for tracking **playset completion**. Only COMMON / RARE / EXALTE
 | GET | `/api/collection/playset` | Completion stats per faction × set × quantity bucket (0, 1, 2, 3+), plus per-faction and per-set aggregates. |
 | GET | `/api/collection/playset/cards` | The whole playset universe, card by card — including cards owned in 0 copies (the "shopping list" view). Paginated. |
 
+#### `GET /api/collection/playset`
+
+Per faction × set, the number of distinct references in each quantity bucket — `0` (not owned), `1`, `2`, `3+` — plus `byFaction` and `bySet` aggregates. Counts only, no card metadata.
+
+The optional repeatable **`rarity[]`** parameter restricts the whole computation (including the "not owned" universe) to a subset of `COMMON` / `RARE` / `EXALTED`; omitted = all three. Unknown values return `422`.
+
+```
+# commons + rares only
+GET /api/collection/playset?rarity[]=COMMON&rarity[]=RARE
+```
+
 #### `GET /api/collection/playset/cards`
 
 Lists every playset card grouped by base reference, each with its versions (C, R1, R2, E) and a per-version `owned` count. `owned` is **raw and uncapped** (foil + non-foil and every card product summed): COREKS copies and A/P alt-art / promo printings are folded onto the canonical **B** version. Cards owned in 0 copies are included.
@@ -500,6 +511,17 @@ Vues en lecture seule pour suivre la **complétion du playset**. Seules les rare
 |---|---|---|
 | GET | `/api/collection/playset` | Statistiques de complétion par faction × set × bucket de quantité (0, 1, 2, 3+), avec agrégats par faction et par set. |
 | GET | `/api/collection/playset/cards` | Tout l'univers playset, carte par carte — y compris les cartes possédées en 0 exemplaire (vue « liste de courses »). Paginé. |
+
+#### `GET /api/collection/playset`
+
+Par faction × set, le nombre de références distinctes dans chaque bucket de quantité — `0` (non possédé), `1`, `2`, `3+` — plus les agrégats `byFaction` et `bySet`. Comptages uniquement, sans métadonnées.
+
+Le paramètre optionnel répétable **`rarity[]`** restreint l'ensemble du calcul (y compris l'univers « non possédé ») à un sous-ensemble de `COMMON` / `RARE` / `EXALTED` ; omis = les trois. Une valeur inconnue renvoie `422`.
+
+```
+# communes + rares uniquement
+GET /api/collection/playset?rarity[]=COMMON&rarity[]=RARE
+```
 
 #### `GET /api/collection/playset/cards`
 

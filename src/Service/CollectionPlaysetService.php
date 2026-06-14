@@ -32,9 +32,10 @@ use App\Repository\CollectionCardViewRepository;
  * or promo) is collapsed onto its booster (B) reference on both sides of the count, so owning an A
  * printing counts toward the same reference as the B — consistent with {@see CollectionPlaysetCardsService}.
  *
- * Both the universe lookup and the owned counts are restricted to {@see self::RARITIES} and
- * {@see self::CARD_TYPES} (UNIQUE rarities, tokens and other card types are excluded), so that
- * the "0" bucket — universe minus owned — stays internally consistent.
+ * Both the universe lookup and the owned counts are restricted to a set of rarities — by default
+ * {@see self::RARITIES}, or a caller-supplied subset of it — and to {@see self::CARD_TYPES}
+ * (UNIQUE rarities, tokens and other card types are always excluded), so that the "0" bucket —
+ * universe minus owned — stays internally consistent.
  *
  * The response carries three views of the same data:
  *   - "byFactionAndSet" — the full faction × set grid,
@@ -58,7 +59,10 @@ class CollectionPlaysetService
     /** Altered factions, in output order. */
     public const FACTIONS = ['AX', 'BR', 'LY', 'MU', 'OR', 'YZ'];
 
-    /** Rarities counted on both sides of the bucket-0 computation. */
+    /**
+     * Rarities counted on both sides of the bucket-0 computation, and the full set of values a
+     * caller may restrict the computation to.
+     */
     public const RARITIES = ['COMMON', 'RARE', 'EXALTED'];
 
     /** Card types counted on both sides of the bucket-0 computation. */
@@ -70,20 +74,24 @@ class CollectionPlaysetService
     ) {}
 
     /**
+     * @param  list<string>|null $rarities  Subset of {@see self::RARITIES} to compute on; null
+     *                                       (the default) counts all of them.
      * @return array{
      *     byFactionAndSet: list<array{faction:string, cardSet:string, quantities:array{0:int, 1:int, 2:int, '3+':int}}>,
      *     byFaction: list<array{faction:string, quantities:array{0:int, 1:int, 2:int, '3+':int}}>,
      *     bySet: list<array{cardSet:string, quantities:array{0:int, 1:int, 2:int, '3+':int}}>
      * }
      */
-    public function computePlayset(User $user): array
+    public function computePlayset(User $user, ?array $rarities = null): array
     {
+        $rarities ??= self::RARITIES;
+
         // Query every underlying edition (the output sets plus their merged sources), then fold
         // each card onto its canonical edition and bucket the merged per-card quantities.
         $sourceSets     = array_values(array_unique(array_merge(self::SETS, array_keys(self::SET_ALIASES))));
-        $rows           = $this->viewRepository->findOwnedCardQuantities($user, $sourceSets, self::RARITIES, self::CARD_TYPES);
+        $rows           = $this->viewRepository->findOwnedCardQuantities($user, $sourceSets, $rarities, self::CARD_TYPES);
         $owned          = $this->mergeAndBucket($rows);
-        $universeCounts = $this->universeCountsByFactionAndSet();
+        $universeCounts = $this->universeCountsByFactionAndSet($rarities);
 
         $byFactionAndSet = [];
         $factionTotals   = array_fill_keys(self::FACTIONS, ['0' => 0, '1' => 0, '2' => 0, '3+' => 0]);
@@ -137,13 +145,15 @@ class CollectionPlaysetService
      * standard). References are product-normalised before counting, so the A/P printings of a card
      * collapse onto its booster (B) reference and are counted once — consistent with the owned side
      * and with {@see CollectionPlaysetCardsService}. The universe is queried for the canonical sets
-     * only ({@see self::SETS}); COREKS adds no new references.
+     * only ({@see self::SETS}); COREKS adds no new references. Restricted to the requested rarity
+     * subset so the "0" bucket stays consistent with the owned side.
      *
+     * @param  list<string> $rarities
      * @return array<string, int>  "FACTION|CARDSET" => distinct reference count
      */
-    private function universeCountsByFactionAndSet(): array
+    private function universeCountsByFactionAndSet(array $rarities): array
     {
-        $universe = $this->alteredCoreClient->fetchPlaysetUniverse(self::SETS, self::RARITIES, self::CARD_TYPES);
+        $universe = $this->alteredCoreClient->fetchPlaysetUniverse(self::SETS, $rarities, self::CARD_TYPES);
 
         $seen   = [];
         $counts = [];
