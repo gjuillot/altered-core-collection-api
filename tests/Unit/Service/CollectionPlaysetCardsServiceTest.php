@@ -222,17 +222,20 @@ class CollectionPlaysetCardsServiceTest extends TestCase
         $this->assertSame([], $result['items']);
     }
 
-    public function testCopiesFilterIncludesCardWhenAnyVersionMatchesBucket(): void
+    public function testCopiesFilterKeepsOnlyVersionsMatchingBucket(): void
     {
         $this->mockUniverse($this->transfugeCardVersions());
         // C owned 0, R1 owned 3, R2 owned 0
         $this->mockOwned(['ALT_DUSTER_B_AX_88_R1' => 3]);
 
-        // copies[]=3 → card included (R1 has owned 3) and ALL surviving versions returned.
+        // copies[]=3 is version-level: card included but ONLY the R1 version (owned 3) survives.
         $result = $this->service->listCards($this->user, copiesFilter: ['3']);
 
         $this->assertSame(1, $result['totalItems']);
-        $this->assertCount(3, $result['items'][0]['versions']);
+        $versions = $result['items'][0]['versions'];
+        $this->assertCount(1, $versions);
+        $this->assertSame('ALT_DUSTER_B_AX_88_R1', $versions[0]['reference']);
+        $this->assertSame(3, $versions[0]['owned']);
     }
 
     public function testCopiesFilterExcludesCardWhenNoVersionMatches(): void
@@ -253,6 +256,7 @@ class CollectionPlaysetCardsServiceTest extends TestCase
         $result = $this->service->listCards($this->user, copiesFilter: ['0']);
 
         $this->assertSame(1, $result['totalItems']);
+        $this->assertCount(3, $result['items'][0]['versions']); // every version owned 0 → all kept
     }
 
     public function testCardSetFilterIsCardLevel(): void

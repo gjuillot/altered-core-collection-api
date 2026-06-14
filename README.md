@@ -194,7 +194,7 @@ Query parameters (all optional, combinable):
 | `cardType[]` | Filter by card type (card level): `CHARACTER`, `SPELL`, `PERMANENT`. |
 | `rarity[]` | Keep only these version rarities: `COMMON`, `RARE` (keeps both R1 and R2), `EXALTED`. Omitted = whole perimeter. |
 | `name` | Case-insensitive partial match on the localized name. |
-| `copies[]` | Keep cards with at least one version owned in a bucket: `0`, `1-2`, `3`, `4plus`. |
+| `copies[]` | Keep only versions whose `owned` falls in a bucket: `0`, `1-2`, `3`, `4plus` (version level — a card is hidden if no version survives). |
 | `page` | Page number (default 1). |
 | `itemsPerPage` | Cards per page (default 30, max 100). |
 
@@ -537,7 +537,7 @@ Paramètres de requête (tous optionnels, combinables) :
 | `cardType[]` | Filtre par type (niveau carte) : `CHARACTER`, `SPELL`, `PERMANENT`. |
 | `rarity[]` | Ne garde que ces raretés de version : `COMMON`, `RARE` (garde R1 **et** R2), `EXALTED`. Omis = tout le périmètre. |
 | `name` | Recherche partielle insensible à la casse sur le nom localisé. |
-| `copies[]` | Garde les cartes dont au moins une version a un owned dans un bucket : `0`, `1-2`, `3`, `4plus`. |
+| `copies[]` | Ne garde que les versions dont l'`owned` tombe dans un bucket : `0`, `1-2`, `3`, `4plus` (niveau version — une carte est masquée si aucune version ne survit). |
 | `page` | Numéro de page (défaut 1). |
 | `itemsPerPage` | Nombre de cartes par page (défaut 30, max 100). |
 

@@ -32,11 +32,12 @@ use App\Repository\CollectionCardViewRepository;
  * copy of (omitted entirely for single-product versions, where it would always be just ["B"]).
  *
  * Filtering happens at two levels (see {@see self::buildItems()}):
- *   - VERSION level — rarity[] and faction[] remove versions out of the requested perimeter; a
- *     removed version is neither displayed nor counted.
- *   - CARD level — cardSet[], cardType[], name and copies[] include/exclude the whole card.
+ *   - VERSION level — rarity[], faction[] (on the real version faction) and copies[] (on the
+ *     version's owned bucket) remove versions out of the requested perimeter; a removed version is
+ *     neither displayed nor counted.
+ *   - CARD level — cardSet[], cardType[] and name include/exclude the whole card.
  * A card is returned iff at least one version survives the version-level filters AND it passes the
- * card-level filters; when returned, ALL its surviving versions are shown.
+ * card-level filters; when returned, all its surviving versions are shown.
  */
 class CollectionPlaysetCardsService
 {
@@ -332,12 +333,16 @@ class CollectionPlaysetCardsService
                 continue;
             }
 
-            // Version-level removal filters: rarity[] and faction[] (on the real version faction).
-            $versions = array_filter($card['versions'], static function (array $v) use ($rarityFilter, $factionFilter): bool {
+            // Version-level removal filters: rarity[], faction[] (on the real version faction) and
+            // copies[] (on the version's owned bucket). A version is kept only if it survives all three.
+            $versions = array_filter($card['versions'], function (array $v) use ($rarityFilter, $factionFilter, $copiesFilter): bool {
                 if (!empty($rarityFilter) && !in_array($v['rarity'], $rarityFilter, true)) {
                     return false;
                 }
                 if (!empty($factionFilter) && !in_array($v['faction'], $factionFilter, true)) {
+                    return false;
+                }
+                if (!empty($copiesFilter) && !$this->ownedMatchesBucket($v['owned'], $copiesFilter)) {
                     return false;
                 }
                 return true;
@@ -345,20 +350,6 @@ class CollectionPlaysetCardsService
 
             if (empty($versions)) {
                 continue; // every version eliminated → card hidden
-            }
-
-            // copies[] is an inclusion predicate over the surviving versions.
-            if (!empty($copiesFilter)) {
-                $anyMatch = false;
-                foreach ($versions as $v) {
-                    if ($this->ownedMatchesBucket($v['owned'], $copiesFilter)) {
-                        $anyMatch = true;
-                        break;
-                    }
-                }
-                if (!$anyMatch) {
-                    continue;
-                }
             }
 
             $items[] = [

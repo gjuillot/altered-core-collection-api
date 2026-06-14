@@ -231,7 +231,7 @@ final class OpenApiDecorator implements OpenApiFactoryInterface
             $arrayParam('cardType[]', 'Filtre par type (niveau carte).', ['CHARACTER', 'SPELL', 'PERMANENT']),
             $arrayParam('rarity[]',   'Filtre de périmètre sur les versions (RARE garde R1 et R2). Omission = tout le périmètre.', ['COMMON', 'RARE', 'EXALTED']),
             new Parameter(name: 'name', in: 'query', description: 'Recherche partielle insensible à la casse sur le nom (dans la locale).', required: false, schema: ['type' => 'string']),
-            $arrayParam('copies[]',   'Garde les cartes dont au moins une version a un owned dans un bucket sélectionné.', ['0', '1-2', '3', '4plus']),
+            $arrayParam('copies[]',   'Filtre de périmètre sur les versions : ne garde que les versions dont l\'owned tombe dans un bucket sélectionné. Une carte est masquée si aucune version ne survit.', ['0', '1-2', '3', '4plus']),
             new Parameter(name: 'page', in: 'query', description: 'Numéro de page (défaut 1).', required: false, schema: ['type' => 'integer', 'default' => 1, 'minimum' => 1]),
             new Parameter(name: 'itemsPerPage', in: 'query', description: 'Nombre de cartes par page (défaut 30, max 100).', required: false, schema: ['type' => 'integer', 'default' => 30, 'minimum' => 1, 'maximum' => 100]),
         ];
