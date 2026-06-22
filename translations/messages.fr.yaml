@@ -23,6 +23,7 @@ homepage:
   endpoint_collection_delete_desc: "Supprime une carte de la collection."
   endpoint_dev_auth_desc: "Génère un JWT de développement (dev uniquement, désactivé en production)."
   endpoint_collection_playset_desc: "Retourne la complétion du playset par faction × extension : nombre de références dans chaque bucket de quantité (0, 1, 2, 3+)."
+  endpoint_collection_playset_cards_desc: "Liste tout l'univers playset carte par carte, y compris les cartes possédées en 0 exemplaire (la vue « liste de courses »). Paginé, avec un compteur de possédés par version et des filtres (cardSet, faction, cardType, rarity, name, copies)."
 
   filter_examples: Exemples de filtres
   badge_auth: Authentifié
@@ -64,7 +65,7 @@ homepage:
   batch_note_unknown: "Ignoré si ID inconnu ou appartient à un autre utilisateur"
 
   section_playset: "Playset"
-  playset_desc: "Statistiques de complétion par faction × extension. Les éditions CORE et COREKS contiennent les mêmes cartes : elles sont fusionnées sous un seul set « CORE », une carte possédée dans les deux éditions étant comptée une seule fois avec la somme des quantités (ex. 1×COREKS + 2×CORE = une carte ×3). Seules les raretés COMMON / RARE / EXALTED et les types CHARACTER / SPELL / PERMANENT sont comptabilisés — héros et raretés UNIQUE exclus."
+  playset_desc: "Statistiques de complétion par faction × extension. Les éditions CORE et COREKS contiennent les mêmes cartes : elles sont fusionnées sous un seul set « CORE », une carte possédée dans les deux éditions étant comptée une seule fois avec la somme des quantités (ex. 1×COREKS + 2×CORE = une carte ×3). De même, les produits d'une carte (B booster, A/P alt-art / promo) sont repliés sur sa référence B. Seules les raretés COMMON / RARE / EXALTED et les types CHARACTER / SPELL / PERMANENT sont comptabilisés — héros et raretés UNIQUE exclus."
   playset_bucket_title: "Buckets de quantité"
   playset_bucket_0: "Non possédé (univers moins les exemplaires possédés)"
   playset_bucket_1: "Possédé en exactement 1 exemplaire"

@@ -160,6 +160,72 @@ For bulk operations (max **100** items per request):
 > POST batch silently skips cards already present (`skipped`) and fetches all metadata in a single call to altered-core.
 > PATCH / DELETE batch silently ignore IDs that do not exist or belong to another user.
 
+### Playset endpoints
+
+Read-only views for tracking **playset completion**. Only COMMON / RARE / EXALTED rarities and CHARACTER / SPELL / PERMANENT (incl. LANDMARK_PERMANENT / EXPEDITION_PERMANENT) types are considered; heroes and UNIQUE are excluded. CORE and COREKS share the same cards and are merged into a single CORE set, and a card's products (B booster, A/P alt-art / promo) are folded onto the B reference — both endpoints apply the same merge.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/collection/playset` | Completion stats per faction × set × quantity bucket (0, 1, 2, 3+), plus per-faction and per-set aggregates. |
+| GET | `/api/collection/playset/cards` | The whole playset universe, card by card — including cards owned in 0 copies (the "shopping list" view). Paginated. |
+
+#### `GET /api/collection/playset`
+
+Per faction × set, the number of distinct references in each quantity bucket — `0` (not owned), `1`, `2`, `3+` — plus `byFaction` and `bySet` aggregates. Counts only, no card metadata.
+
+The optional repeatable **`rarity[]`** parameter restricts the whole computation (including the "not owned" universe) to a subset of `COMMON` / `RARE` / `EXALTED`; omitted = all three. Unknown values return `422`.
+
+```
+# commons + rares only
+GET /api/collection/playset?rarity[]=COMMON&rarity[]=RARE
+```
+
+#### `GET /api/collection/playset/cards`
+
+Lists every playset card grouped by base reference, each with its versions (C, R1, R2, E) and a per-version `owned` count. `owned` is **raw and uncapped** (foil + non-foil and every card product summed): COREKS copies and A/P alt-art / promo printings are folded onto the canonical **B** version. Cards owned in 0 copies are included.
+
+Query parameters (all optional, combinable):
+
+| Param | Description |
+|---|---|
+| `locale` | Locale for the localized `name` (default `en`). |
+| `cardSet[]` | Filter by set reference (card level), e.g. `cardSet[]=DUSTER`. |
+| `faction[]` | Filter by the version's **real** faction, e.g. `faction[]=AX` (a transfuge R2 is matched on its host faction, e.g. Bravos). |
+| `cardType[]` | Filter by card type (card level): `CHARACTER`, `SPELL`, `PERMANENT`. |
+| `rarity[]` | Keep only these version rarities: `COMMON`, `RARE` (keeps both R1 and R2), `EXALTED`. Omitted = whole perimeter. |
+| `name` | Case-insensitive partial match on the localized name. |
+| `copies[]` | Keep only versions whose `owned` falls in a bucket: `0`, `1-2`, `3`, `4plus` (version level — a card is hidden if no version survives). |
+| `page` | Page number (default 1). |
+| `itemsPerPage` | Cards per page (default 30, max 100). |
+
+```jsonc
+{
+  "summary": {
+    "totalCards": 587,        // cards matching the filters
+    "totalVersions": 1542,    // versions cumulated across those cards
+    "totalOwned": 768,        // total COPIES owned (sum of every version's owned, NOT a version count)
+    "ownedBuckets": { "0": 1230, "1-2": 200, "3": 80, "4plus": 32 } // versions per owned tier; sum = totalVersions (1542)
+  }, // totals over the whole filtered result, all pages
+  "items": [
+    {
+      "baseReference": "ALT_DUSTER_B_AX_88",
+      "name": "Ira, Fair Attendee",
+      "cardSet": "DUSTER",
+      "cardType": "CHARACTER",
+      "versions": [
+        { "reference": "ALT_DUSTER_B_AX_88_C",  "collectorNumberFormatedId": "SDU-002-C-EN", "faction": "AX", "rarity": "COMMON", "transfuge": false, "owned": 2, "imagePath": "https://.../en_US/...jpg" },
+        { "reference": "ALT_DUSTER_B_AX_88_R1", "collectorNumberFormatedId": "SDU-002-R-EN", "faction": "AX", "rarity": "RARE",   "transfuge": false, "owned": 0, "imagePath": "..." },
+        { "reference": "ALT_DUSTER_B_AX_88_R2", "collectorNumberFormatedId": "SDU-002-F-EN", "faction": "BR", "rarity": "RARE",   "transfuge": true,  "owned": 0, "imagePath": "..." }
+      ]
+    }
+  ],
+  "page": 1, "itemsPerPage": 30, "totalItems": 587, "totalPages": 20
+}
+```
+
+> Fields use the same flattened format as `/api/collection` (single-locale strings; faction / rarity / cardType as codes).
+> A version printed in several products (e.g. an alt-art) additionally carries `ownedCardProducts` — the list of products you own a copy of (e.g. `["A","B"]`).
+
 ### Adding a card (example)
 
 ```bash
@@ -204,56 +270,6 @@ Expected reference format: `ALT_CORE_B_AX_01_C` (regex `^ALT_[A-Z0-9]+_[A-Z0-9]+
 ?isBanned=false
 ?isSuspended=false
 ```
-
-### Playset endpoint
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/collection/playset` | Playset completion stats for the current user |
-
-For the connected user, returns the number of distinct card references in each quantity bucket, broken down by faction × set, plus per-faction and per-set aggregates. Counts only — no card metadata or labels.
-
-**Quantity buckets** (per faction × set):
-
-| Bucket | Meaning |
-|---|---|
-| `0` | Not owned (set/faction universe minus owned references) |
-| `1` | Owned in exactly 1 copy |
-| `2` | Owned in exactly 2 copies |
-| `3+` | Owned in 3 or more copies |
-
-**Scope.** Sets `CORE`, `ALIZE`, `BISE`, `CYCLONE`, `DUSTER`, `EOLE` × factions `AX`, `BR`, `LY`, `MU`, `OR`, `YZ`. The `CORE` and `COREKS` editions share the same cards and are merged into a single `CORE` set — a card owned across both editions is counted once with the summed quantities (e.g. 1×COREKS + 2×CORE = one card ×3, bucket `3+`). Only the `COMMON` / `RARE` / `EXALTED` rarities and the `CHARACTER` / `SPELL` / `PERMANENT` / `LANDMARK_PERMANENT` / `EXPEDITION_PERMANENT` card types are counted; heroes and `UNIQUE` rarities are excluded.
-
-**Rarity filter (optional).** The repeatable `rarity[]` query parameter restricts the whole computation — including the "not owned" universe — to a subset of the supported rarities. When omitted, all three are counted. Unknown values return `422`.
-
-```
-# all rarities (default)
-GET /api/collection/playset
-
-# common cards only
-GET /api/collection/playset?rarity[]=COMMON
-
-# commons + rares
-GET /api/collection/playset?rarity[]=COMMON&rarity[]=RARE
-```
-
-**Response** (`200`):
-
-```json
-{
-  "byFactionAndSet": [
-    { "faction": "AX", "cardSet": "CORE", "quantities": { "0": 80, "1": 2, "2": 1, "3+": 1 } }
-  ],
-  "byFaction": [
-    { "faction": "AX", "quantities": { "0": 417, "1": 2, "2": 1, "3+": 1 } }
-  ],
-  "bySet": [
-    { "cardSet": "CORE", "quantities": { "0": 500, "1": 2, "2": 1, "3+": 1 } }
-  ]
-}
-```
-
-> Errors: `401` if not authenticated, `422` if an unknown rarity is supplied.
 
 ---
 
@@ -487,6 +503,72 @@ Pour les opérations en masse (max **100** éléments par requête) :
 > Le POST batch ignore silencieusement les cartes déjà présentes (`skipped`) et récupère toutes les métadonnées en un seul appel à altered-core.
 > Le PATCH / DELETE batch ignorent silencieusement les IDs inexistants ou appartenant à un autre utilisateur.
 
+### Endpoints playset
+
+Vues en lecture seule pour suivre la **complétion du playset**. Seules les raretés COMMON / RARE / EXALTED et les types CHARACTER / SPELL / PERMANENT (dont LANDMARK_PERMANENT / EXPEDITION_PERMANENT) sont pris en compte ; les héros et la rareté UNIQUE sont exclus. CORE et COREKS partagent les mêmes cartes et sont fusionnés sous un seul set CORE, et les produits d'une carte (B booster, A/P alt-art / promo) sont repliés sur la référence B — les deux endpoints appliquent la même fusion.
+
+| Méthode | Endpoint | Description |
+|---|---|---|
+| GET | `/api/collection/playset` | Statistiques de complétion par faction × set × bucket de quantité (0, 1, 2, 3+), avec agrégats par faction et par set. |
+| GET | `/api/collection/playset/cards` | Tout l'univers playset, carte par carte — y compris les cartes possédées en 0 exemplaire (vue « liste de courses »). Paginé. |
+
+#### `GET /api/collection/playset`
+
+Par faction × set, le nombre de références distinctes dans chaque bucket de quantité — `0` (non possédé), `1`, `2`, `3+` — plus les agrégats `byFaction` et `bySet`. Comptages uniquement, sans métadonnées.
+
+Le paramètre optionnel répétable **`rarity[]`** restreint l'ensemble du calcul (y compris l'univers « non possédé ») à un sous-ensemble de `COMMON` / `RARE` / `EXALTED` ; omis = les trois. Une valeur inconnue renvoie `422`.
+
+```
+# communes + rares uniquement
+GET /api/collection/playset?rarity[]=COMMON&rarity[]=RARE
+```
+
+#### `GET /api/collection/playset/cards`
+
+Liste chaque carte du playset regroupée par référence de base, avec ses versions (C, R1, R2, E) et un `owned` par version. `owned` est **brut et non plafonné** (foil + non-foil et tous les cardProducts confondus) : les exemplaires COREKS et les réimpressions A/P (alt-art / promo) sont repliés sur la version **B** canonique. Les cartes possédées en 0 exemplaire sont incluses.
+
+Paramètres de requête (tous optionnels, combinables) :
+
+| Param | Description |
+|---|---|
+| `locale` | Locale du nom localisé (défaut `en`). |
+| `cardSet[]` | Filtre par référence de set (niveau carte), ex. `cardSet[]=DUSTER`. |
+| `faction[]` | Filtre par faction **réelle** de la version, ex. `faction[]=AX` (une R2 transfuge est filtrée sur sa faction d'accueil, ex. Bravos). |
+| `cardType[]` | Filtre par type (niveau carte) : `CHARACTER`, `SPELL`, `PERMANENT`. |
+| `rarity[]` | Ne garde que ces raretés de version : `COMMON`, `RARE` (garde R1 **et** R2), `EXALTED`. Omis = tout le périmètre. |
+| `name` | Recherche partielle insensible à la casse sur le nom localisé. |
+| `copies[]` | Ne garde que les versions dont l'`owned` tombe dans un bucket : `0`, `1-2`, `3`, `4plus` (niveau version — une carte est masquée si aucune version ne survit). |
+| `page` | Numéro de page (défaut 1). |
+| `itemsPerPage` | Nombre de cartes par page (défaut 30, max 100). |
+
+```jsonc
+{
+  "summary": {
+    "totalCards": 587,        // cartes correspondant aux filtres
+    "totalVersions": 1542,    // versions cumulées sur ces cartes
+    "totalOwned": 768,        // nombre total d'EXEMPLAIRES possédés (somme des owned, PAS un comptage de versions)
+    "ownedBuckets": { "0": 1230, "1-2": 200, "3": 80, "4plus": 32 } // versions par palier d'owned ; somme = totalVersions (1542)
+  }, // totaux sur tout le résultat filtré, toutes pages
+  "items": [
+    {
+      "baseReference": "ALT_DUSTER_B_AX_88",
+      "name": "Ira, Participant à la Foire",
+      "cardSet": "DUSTER",
+      "cardType": "CHARACTER",
+      "versions": [
+        { "reference": "ALT_DUSTER_B_AX_88_C",  "collectorNumberFormatedId": "SDU-002-C-EN", "faction": "AX", "rarity": "COMMON", "transfuge": false, "owned": 2, "imagePath": "https://.../fr_FR/...jpg" },
+        { "reference": "ALT_DUSTER_B_AX_88_R1", "collectorNumberFormatedId": "SDU-002-R-EN", "faction": "AX", "rarity": "RARE",   "transfuge": false, "owned": 0, "imagePath": "..." },
+        { "reference": "ALT_DUSTER_B_AX_88_R2", "collectorNumberFormatedId": "SDU-002-F-EN", "faction": "BR", "rarity": "RARE",   "transfuge": true,  "owned": 0, "imagePath": "..." }
+      ]
+    }
+  ],
+  "page": 1, "itemsPerPage": 30, "totalItems": 587, "totalPages": 20
+}
+```
+
+> Les champs reprennent le format aplati de `/api/collection` (chaînes mono-locale ; faction / rareté / type en codes).
+> Une version imprimée en plusieurs produits (ex. un alt-art) expose en plus `ownedCardProducts` — la liste des produits dont vous possédez un exemplaire (ex. `["A","B"]`).
+
 ### Ajout d'une carte (exemple)
 
 ```bash
@@ -531,56 +613,6 @@ Format de référence attendu : `ALT_CORE_B_AX_01_C` (regex `^ALT_[A-Z0-9]+_[A-Z
 ?isBanned=false
 ?isSuspended=false
 ```
-
-### Endpoint playset
-
-| Méthode | Endpoint | Description |
-|---|---|---|
-| GET | `/api/collection/playset` | Statistiques de complétion du playset pour l'utilisateur courant |
-
-Pour l'utilisateur connecté, retourne le nombre de références distinctes dans chaque bucket de quantité, ventilé par faction × set, plus des agrégats par faction et par set. Comptages uniquement — aucune métadonnée ni libellé de carte.
-
-**Buckets de quantité** (par faction × set) :
-
-| Bucket | Signification |
-|---|---|
-| `0` | Non possédé (univers du set/faction moins les références possédées) |
-| `1` | Possédé en exactement 1 exemplaire |
-| `2` | Possédé en exactement 2 exemplaires |
-| `3+` | Possédé en 3 exemplaires ou plus |
-
-**Périmètre.** Sets `CORE`, `ALIZE`, `BISE`, `CYCLONE`, `DUSTER`, `EOLE` × factions `AX`, `BR`, `LY`, `MU`, `OR`, `YZ`. Les éditions `CORE` et `COREKS` contiennent les mêmes cartes et sont fusionnées sous un seul set `CORE` — une carte possédée dans les deux éditions est comptée une seule fois avec la somme des quantités (ex. 1×COREKS + 2×CORE = une carte ×3, bucket `3+`). Seules les raretés `COMMON` / `RARE` / `EXALTED` et les types `CHARACTER` / `SPELL` / `PERMANENT` / `LANDMARK_PERMANENT` / `EXPEDITION_PERMANENT` sont comptabilisés ; les héros et les raretés `UNIQUE` sont exclus.
-
-**Filtre de rareté (optionnel).** Le paramètre répétable `rarity[]` restreint l'ensemble du calcul — y compris l'univers « non possédé » — à un sous-ensemble des raretés supportées. S'il est absent, les trois sont comptabilisées. Une valeur inconnue renvoie `422`.
-
-```
-# toutes les raretés (par défaut)
-GET /api/collection/playset
-
-# communes uniquement
-GET /api/collection/playset?rarity[]=COMMON
-
-# communes + rares
-GET /api/collection/playset?rarity[]=COMMON&rarity[]=RARE
-```
-
-**Réponse** (`200`) :
-
-```json
-{
-  "byFactionAndSet": [
-    { "faction": "AX", "cardSet": "CORE", "quantities": { "0": 80, "1": 2, "2": 1, "3+": 1 } }
-  ],
-  "byFaction": [
-    { "faction": "AX", "quantities": { "0": 417, "1": 2, "2": 1, "3+": 1 } }
-  ],
-  "bySet": [
-    { "cardSet": "CORE", "quantities": { "0": 500, "1": 2, "2": 1, "3+": 1 } }
-  ]
-}
-```
-
-> Erreurs : `401` si non authentifié, `422` si une rareté inconnue est fournie.
 
 ---
 
