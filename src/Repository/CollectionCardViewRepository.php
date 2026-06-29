@@ -30,6 +30,16 @@ class CollectionCardViewRepository extends ServiceEntityRepository
      */
     public function findByUserWithFilters(User $user, array $filters = []): array
     {
+        return $this->createFilteredQueryBuilder($user, $filters)->getQuery()->getResult();
+    }
+
+    /**
+     * Builds the filtered query for the connected user's collection. Extracted from
+     * {@see findByUserWithFilters()} so the generated DQL can be asserted in tests
+     * without a live database connection.
+     */
+    public function createFilteredQueryBuilder(User $user, array $filters = []): \Doctrine\ORM\QueryBuilder
+    {
         $qb = $this->createQueryBuilder('v')
             ->where('v.user = :user')
             ->setParameter('user', $user)
@@ -48,7 +58,10 @@ class CollectionCardViewRepository extends ServiceEntityRepository
             $qb->andWhere('v.cardReference LIKE :cardRef')->setParameter('cardRef', '%'.$filters['cardReference'].'%');
         }
         if (!empty($filters['name'])) {
-            $qb->andWhere('v.name LIKE :name')->setParameter('name', '%'.$filters['name'].'%');
+            // Case-insensitive substring match: PostgreSQL LIKE is case-sensitive, so we
+            // lower-case both the column and the pattern. (Accents are NOT normalised — see
+            // findByUserWithFilters tests / would require the unaccent extension.)
+            $qb->andWhere('LOWER(v.name) LIKE LOWER(:name)')->setParameter('name', '%'.$filters['name'].'%');
         }
         if (!empty($filters['cardType'])) {
             $qb->andWhere('v.cardType = :cardType')->setParameter('cardType', $filters['cardType']);
@@ -77,7 +90,7 @@ class CollectionCardViewRepository extends ServiceEntityRepository
         $this->applyRangeFilter($qb, $filters, 'mountainPower');
         $this->applyRangeFilter($qb, $filters, 'forestPower');
 
-        return $qb->getQuery()->getResult();
+        return $qb;
     }
 
     /**
